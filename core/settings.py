@@ -125,7 +125,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = "/static/"
+STATIC_URL = "/staticfiles/"
 STATIC_ROOT = BASE_DIR / "staticfiles"   # лучше так, чем BASE_DIR/static
 
 # STATICFILES_DIRS = [
@@ -165,23 +165,49 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    'http://127.0.0.1:8000',
+    'https://vostok-massage.webtm.ru',
+    "https://vostok-massage.webtm.ru",
+]
 
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
+CORS_ORIGIN_WRITELIST = (
+    'http://localhost:3000',
+    'http://localhost:',
+    'https://vostok-massage.webtm.ru'
+)
 
+CORS_ALLOW_HEADERS = (
+    'content-disposition', 'accept-encoding',
+    'content-type', 'accept', 'origin', 'Authorization', 'access-control-allow-methods',
+    'Access-Control-Allow-Origin'
+)
+
+CORS_ALLOW_METHODS = (
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+)
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 YOUTUBE_CLIENT_SECRETS_FILE = BASE_DIR / "client_secret.json"
-YOUTUBE_REDIRECT_URI = "http://127.0.0.1:8000/api/youtube/project/oauth/callback/"
+YOUTUBE_REDIRECT_URI = "https://vostok-massage.webtm.ru/api/youtube/project/oauth/callback/"
 
 YOUTUBE_SCOPES = [    "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",]
 
 # куда редиректить админа после успеха (опционально)
-YOUTUBE_OAUTH_SUCCESS_REDIRECT = "http://127.0.0.1:5173/admin/youtube-connected"
+YOUTUBE_OAUTH_SUCCESS_REDIRECT = "https://vostok-massage.webtm.ru/admin/youtube-connected"
 
 
 SWAGGER_SETTINGS = {

@@ -10,6 +10,8 @@ from .models import (
     Tariff,
     CourseAccess,
     Homework,
+    CourseAnalytics,
+    CourseDailyAnalytics
 )
 
 User = get_user_model()
@@ -394,3 +396,56 @@ class TeacherHomeworkUpdateSerializer(serializers.ModelSerializer):
         if value not in allowed:
             raise serializers.ValidationError("Неверный статус.")
         return value
+
+
+class AnalyticsOverviewSerializer(serializers.Serializer):
+    total_revenue = serializers.DecimalField(max_digits=14, decimal_places=2)
+    total_purchases = serializers.IntegerField()
+    total_students = serializers.IntegerField()
+
+    total_courses = serializers.IntegerField()
+    total_lessons = serializers.IntegerField()
+
+    total_homeworks = serializers.IntegerField()
+    accepted_homeworks = serializers.IntegerField()
+
+
+
+class CourseAnalyticsSerializer(serializers.ModelSerializer):
+    course_id = serializers.IntegerField(source="course.id")
+    course_title = serializers.CharField(source="course.title")
+
+    class Meta:
+        model = CourseAnalytics
+        fields = (
+            "course_id",
+            "course_title",
+            "total_purchases",
+            "total_revenue",
+            "total_students",
+            "completion_rate",
+        )
+
+
+class CourseDailyAnalyticsSerializer(serializers.ModelSerializer):
+    course_title = serializers.CharField(source="course.title")
+
+    class Meta:
+        model = CourseDailyAnalytics
+        fields = (
+            "date",
+            "course_title",
+            "purchases",
+            "revenue",
+            "opened_lessons",
+            "unique_students",
+            "homeworks_submitted",
+            "homeworks_accepted",
+        )
+
+
+class TopLessonSerializer(serializers.Serializer):
+    lesson_id = serializers.IntegerField()
+    lesson_title = serializers.CharField()
+    course_title = serializers.CharField()
+    opens_count = serializers.IntegerField()

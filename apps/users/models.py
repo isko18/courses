@@ -403,3 +403,38 @@ class Homework(models.Model):
 
     def __str__(self):
         return f"ДЗ: {self.user} — {self.lesson.title}"
+
+
+class CourseDailyAnalytics(models.Model):
+    date = models.DateField(db_index=True)
+    course = models.ForeignKey(Course, on_delete=models.CASCADE)
+
+    purchases = models.PositiveIntegerField(default=0)
+    revenue = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    opened_lessons = models.PositiveIntegerField(default=0)
+    unique_students = models.PositiveIntegerField(default=0)
+
+    homeworks_submitted = models.PositiveIntegerField(default=0)
+    homeworks_accepted = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        unique_together = ("date", "course")
+        indexes = [models.Index(fields=["date", "course"])]
+
+
+
+class CourseAnalytics(models.Model):
+    course = models.OneToOneField(Course, on_delete=models.CASCADE)
+
+    total_purchases = models.PositiveIntegerField(default=0)
+    total_revenue = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
+    total_students = models.PositiveIntegerField(default=0)
+
+    total_lessons = models.PositiveIntegerField(default=0)
+    total_opens = models.PositiveIntegerField(default=0)
+
+    completion_rate = models.FloatField(default=0)
+
+    updated_at = models.DateTimeField(auto_now=True)

@@ -2,7 +2,7 @@ import os
 import tempfile
 import shutil
 from django.db import transaction
-from django.db.models import Count, Exists, OuterRef
+from django.db.models import Count, Exists, OuterRef, Q
 
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
@@ -20,8 +20,10 @@ from .models import (
     LessonOpen,
     Homework,
     ProjectYouTubeCredential,
+    CourseDailyAnalytics,
+    CourseAnalytics
 )
-from .permissions import IsTeacher, IsStudent
+from .permissions import IsTeacher, IsStudent, IsAdminRole
 from .serializers import (
     RegisterSerializer,
     MeSerializer,
@@ -40,10 +42,15 @@ from .serializers import (
     TeacherLessonCreateUpdateSerializer,
     TeacherHomeworkSerializer,
     TeacherHomeworkUpdateSerializer,
-    TeacherLessonUploadSerializer,  # ✅ добавили
+    TeacherLessonUploadSerializer,
+    AnalyticsOverviewSerializer, 
+    CourseAnalyticsSerializer,
+    TopLessonSerializer,
+    CourseDailyAnalyticsSerializer
 )
-from .youtube_service import build_youtube, creds_from_json, upload_video  # ✅ добавили
+from .youtube_service import build_youtube, creds_from_json, upload_video
 
+from django.db.models import Sum, Count
 
 # =========================
 # AUTH
@@ -482,3 +489,83 @@ class TeacherHomeworkUpdateView(generics.UpdateAPIView):
         return Homework.objects.select_related("lesson", "lesson__course").filter(
             lesson__course__instructor=self.request.user
         )
+
+
+
+class AnalyticsOverviewView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get(self, request):
+        data = {
+            "total_revenue": CourseAnalytics.objects.aggregate(
+                s=Sum("total_revenue")
+            )["s"] or 0,
+
+            "total_purchases": CourseAnalytics.objects.aggregate(
+                s=Sum("total_purchases")
+            )["s"] or 0,
+
+            "total_students": CourseAnalytics.objects.aggregate(
+                s=Sum("total_students")
+            )["s"] or 0,
+
+            "total_courses": Course.objects.count(),
+            "total_lessons": Lesson.objects.filter(is_archived=False).count(),
+
+            "total_homeworks": Homework.objects.count(),
+            "accepted_homeworks": Homework.objects.filter(status="accepted").count(),
+        }
+
+        return Response(AnalyticsOverviewSerializer(data).data)
+    
+
+class CoursesAnalyticsView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get(self, request):
+        qs = CourseAnalytics.objects.select_related("course").order_by("-total_revenue")
+        return Response(CourseAnalyticsSerializer(qs, many=True).data)
+    
+
+class CourseDetailAnalyticsView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get(self, request, course_id):
+        analytics = CourseAnalytics.objects.select_related("course").get(
+            course_id=course_id
+        )
+
+        daily = (
+            CourseDailyAnalytics.objects
+            .filter(course_id=course_id)
+            .order_by("date")
+        )
+
+        return Response({
+            "course": CourseAnalyticsSerializer(analytics).data,
+            "daily": CourseDailyAnalyticsSerializer(daily, many=True).data,
+        })
+
+class TopLessonsAnalyticsView(APIView):
+    permission_classes = [permissions.IsAuthenticated, IsAdminRole]
+
+    def get(self, request):
+        qs = (
+            Lesson.objects
+            .select_related("course")
+            .annotate(opens_count=Count("opens"))
+            .order_by("-opens_count")[:10]
+        )
+
+        data = [
+            {
+                "lesson_id": l.id,
+                "lesson_title": l.title,
+                "course_title": l.course.title,
+                "opens_count": l.opens_count,
+            }
+            for l in qs
+        ]
+
+        return Response(TopLessonSerializer(data, many=True).data)
+
