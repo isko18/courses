@@ -165,11 +165,37 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    'http://127.0.0.1:8000',
+    'https://vostok-massage.webtm.ru',
+    "https://vostok-massage.webtm.ru",
+]
 
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
+CORS_ORIGIN_WRITELIST = (
+    'http://localhost:3000',
+    'http://localhost:',
+    'https://vostok-massage.webtm.ru'
+)
 
+CORS_ALLOW_HEADERS = (
+    'content-disposition', 'accept-encoding',
+    'content-type', 'accept', 'origin', 'Authorization', 'access-control-allow-methods',
+    'Access-Control-Allow-Origin'
+)
+
+CORS_ALLOW_METHODS = (
+    "DELETE",
+    "GET",
+    "OPTIONS",
+    "PATCH",
+    "POST",
+    "PUT",
+)
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent

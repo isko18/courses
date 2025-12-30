@@ -33,6 +33,11 @@ from .views import (
 
     # youtube upload create lesson
     TeacherCreateLessonWithUploadView,
+
+    AnalyticsOverviewView,
+    CourseDetailAnalyticsView,
+    TopLessonsAnalyticsView,
+    CoursesAnalyticsView
 )
 
 # Если ты уже вынес OAuth в отдельный файл views_youtube.py — подключай так:
@@ -101,4 +106,9 @@ urlpatterns = [
     path("youtube/project/status/", YouTubeProjectStatusView.as_view(), name="yt-project-status"),
     path("youtube/lessons/<int:pk>/refresh-status/", TeacherRefreshLessonYouTubeStatusView.as_view()),
     path("youtube/lessons/refresh-status-batch/", TeacherRefreshYouTubeStatusBatchView.as_view()),
+
+    path("analystic/overview/", AnalyticsOverviewView.as_view()),
+    path("analystic/courses/", CoursesAnalyticsView.as_view()),
+    path("analystic/courses/<int:course_id>/", CourseDetailAnalyticsView.as_view()),
+    path("analystic/lessons/top/", TopLessonsAnalyticsView.as_view()),
 ]
