@@ -125,7 +125,7 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 
-STATIC_URL = "/static/"
+STATIC_URL = "/staticfiles/"
 STATIC_ROOT = BASE_DIR / "staticfiles"   # лучше так, чем BASE_DIR/static
 
 # STATICFILES_DIRS = [
@@ -175,13 +175,13 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 YOUTUBE_CLIENT_SECRETS_FILE = BASE_DIR / "client_secret.json"
-YOUTUBE_REDIRECT_URI = "http://127.0.0.1:8000/api/youtube/project/oauth/callback/"
+YOUTUBE_REDIRECT_URI = "https://vostok-massage.webtm.ru/api/youtube/project/oauth/callback/"
 
 YOUTUBE_SCOPES = [    "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",]
 
 # куда редиректить админа после успеха (опционально)
-YOUTUBE_OAUTH_SUCCESS_REDIRECT = "http://127.0.0.1:5173/admin/youtube-connected"
+YOUTUBE_OAUTH_SUCCESS_REDIRECT = "https://vostok-massage.webtm.ru/admin/youtube-connected"
 
 
 SWAGGER_SETTINGS = {
