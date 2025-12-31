@@ -38,6 +38,7 @@ from .serializers import (
     OpenLessonSerializer,
     HomeworkCreateSerializer,
     HomeworkSerializer,
+    HomeworkUpdateSerializer,
     TeacherLessonSerializer,
     TeacherLessonCreateUpdateSerializer,
     TeacherHomeworkSerializer,
@@ -269,18 +270,17 @@ class MyHomeworksView(generics.ListAPIView):
     def get_queryset(self):
         return Homework.objects.select_related("lesson", "lesson__course").filter(user=self.request.user).order_by("-created_at")
 
-class MyHomeworkDetailView(generics.RetrieveAPIView):
+# views.py
+class MyHomeworkUpdateView(generics.UpdateAPIView):
     permission_classes = [permissions.IsAuthenticated, IsStudent]
-    serializer_class = HomeworkSerializer
+    serializer_class = HomeworkUpdateSerializer
     lookup_field = "id"
+    http_method_names = ["patch"]
 
     def get_queryset(self):
-        # студент может получать ТОЛЬКО свои ДЗ
-        return (
-            Homework.objects
-            .select_related("lesson", "lesson__course")
-            .filter(user=self.request.user)
-        )
+        # студент может редактировать ТОЛЬКО свои ДЗ
+        return Homework.objects.filter(user=self.request.user)
+
 # =========================
 # TEACHER CABINET: LESSONS + ARCHIVE
 # =========================

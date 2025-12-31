@@ -131,6 +131,7 @@ class LessonPublicSerializer(serializers.ModelSerializer):
             "course_title",
             "title",
             "description",
+            "youtube_video_id",
             "video_duration",
             "is_archived",
             # ✅ ДЗ (что видит студент на витрине/в списке уроков)
@@ -265,6 +266,25 @@ class HomeworkSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ("status", "comment", "created_at", "updated_at")
 
+# serializers.py
+class HomeworkUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Homework
+        fields = ("content",)
+
+    def validate(self, attrs):
+        homework = self.instance
+        if homework.status != "rework":
+            raise serializers.ValidationError(
+                "Редактирование возможно только если ДЗ на доработке."
+            )
+        return attrs
+
+    def validate_content(self, value):
+        value = (value or "").strip()
+        if not value:
+            raise serializers.ValidationError("Контент обязателен.")
+        return value
 
 # =========================
 # TEACHER: LESSONS + ARCHIVE + UPLOAD + HOMEWORK TASK
