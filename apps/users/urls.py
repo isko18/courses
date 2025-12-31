@@ -20,6 +20,7 @@ from .views import (
     OpenLessonView,
     HomeworkCreateView,
     MyHomeworksView,
+    MyHomeworkDetailView,
 
     # teacher lessons + archive
     TeacherLessonListCreateView,
@@ -78,7 +79,7 @@ urlpatterns = [
     path("lessons/open/", OpenLessonView.as_view(), name="lessons-open"),
     path("homeworks/", HomeworkCreateView.as_view(), name="homeworks-create"),
     path("me/homeworks/", MyHomeworksView.as_view(), name="me-homeworks"),
-
+    path("student/homeworks/<int:id>/", MyHomeworkDetailView.as_view(), name="my-homework-detail",),
     # =========================
     # TEACHER: LESSONS CRUD + ARCHIVE
     # =========================
