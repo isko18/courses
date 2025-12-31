@@ -24,7 +24,7 @@ User = get_user_model()
 class SettingsSeiteSerializer(serializers.ModelSerializer):
     class Meta:
         model = SettingsSite
-        fields = ("id", "title", "description", "banner", "whatsapp_number")
+        fields = ("id", "logo", "title", "description", "banner", "whatsapp_number")
         
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
