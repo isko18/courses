@@ -11,7 +11,8 @@ from .models import (
     CourseAccess,
     Homework,
     CourseAnalytics,
-    CourseDailyAnalytics
+    CourseDailyAnalytics,
+    SettingsSite
 )
 
 User = get_user_model()
@@ -20,6 +21,11 @@ User = get_user_model()
 # =========================
 # AUTH
 # =========================
+class SettingsSeiteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SettingsSite
+        fields = ("id", "title", "description", "banner", "whatsapp_number")
+        
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     password2 = serializers.CharField(write_only=True, min_length=8)

@@ -13,12 +13,15 @@ from .models import (
     CourseAccess,
     LessonOpen,
     Homework,
+    SettingsSite
 )
 
 
 # =========================
 # USERS
 # =========================
+admin.site.register(SettingsSite)
+
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
     list_display = ("id", "username", "email", "phone", "role", "is_active", "is_staff", "is_superuser")
