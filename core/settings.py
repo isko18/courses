@@ -169,8 +169,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:5173",
     'http://127.0.0.1:8000',
-    'https://vostok-massage.webtm.ru',
-    "https://vostok-massage.webtm.ru",
+    'https://vostok-massage.kg',
+    "https://vostok-massage.kg",
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True
@@ -179,7 +179,7 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ORIGIN_WRITELIST = (
     'http://localhost:3000',
     'http://localhost:',
-    'https://vostok-massage.webtm.ru'
+    'https://vostok-massage.kg'
 )
 
 CORS_ALLOW_HEADERS = (
@@ -201,13 +201,13 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 YOUTUBE_CLIENT_SECRETS_FILE = BASE_DIR / "client_secret.json"
-YOUTUBE_REDIRECT_URI = "https://vostok-massage.webtm.ru/api/youtube/project/oauth/callback/"
+YOUTUBE_REDIRECT_URI = "https://vostok-massage.kg/api/youtube/project/oauth/callback/"
 
 YOUTUBE_SCOPES = [    "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",]
 
 # куда редиректить админа после успеха (опционально)
-YOUTUBE_OAUTH_SUCCESS_REDIRECT = "https://vostok-massage.webtm.ru/admin/youtube-connected"
+YOUTUBE_OAUTH_SUCCESS_REDIRECT = "https://vostok-massage.kg/admin/youtube-connected"
 
 
 SWAGGER_SETTINGS = {
