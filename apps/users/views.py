@@ -269,7 +269,18 @@ class MyHomeworksView(generics.ListAPIView):
     def get_queryset(self):
         return Homework.objects.select_related("lesson", "lesson__course").filter(user=self.request.user).order_by("-created_at")
 
+class MyHomeworkDetailView(generics.RetrieveAPIView):
+    permission_classes = [permissions.IsAuthenticated, IsStudent]
+    serializer_class = HomeworkSerializer
+    lookup_field = "id"
 
+    def get_queryset(self):
+        # студент может получать ТОЛЬКО свои ДЗ
+        return (
+            Homework.objects
+            .select_related("lesson", "lesson__course")
+            .filter(user=self.request.user)
+        )
 # =========================
 # TEACHER CABINET: LESSONS + ARCHIVE
 # =========================
