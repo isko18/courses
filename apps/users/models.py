@@ -68,6 +68,7 @@ class ProjectYouTubeCredential(models.Model):
 # CATALOG
 # =========================
 class Category(models.Model):
+    photo = models.ImageField(upload_to="category/", verbose_name="Фото категории", blank=True, null=True)
     name = models.CharField(max_length=255, verbose_name="Название категории")
     description = models.TextField(blank=True, default="", verbose_name="Описание категории")
 
@@ -81,6 +82,7 @@ class Category(models.Model):
 
 
 class Course(models.Model):
+    photo = models.ImageField(upload_to="course/", verbose_name="Фото Курса", blank=True, null=True)
     title = models.CharField(max_length=255, verbose_name="Название курса")
     category = models.ForeignKey(
         Category,

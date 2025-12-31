@@ -73,7 +73,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Category
-        fields = ("id", "name", "description", "courses_count")
+        fields = ("id", "photo","name", "description", "courses_count")
 
 
 class CourseSerializer(serializers.ModelSerializer):
@@ -86,6 +86,7 @@ class CourseSerializer(serializers.ModelSerializer):
         model = Course
         fields = (
             "id",
+            "photo",
             "title",
             "description",
             "category",
