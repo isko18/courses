@@ -58,7 +58,7 @@ class ProjectYouTubeCredentialAdmin(admin.ModelAdmin):
 # =========================
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ("id", "name")
+    list_display = ("id", "photo","name")
     search_fields = ("name",)
     ordering = ("id",)
 
@@ -89,7 +89,7 @@ class LessonInline(admin.TabularInline):
 # =========================
 @admin.register(Course)
 class CourseAdmin(admin.ModelAdmin):
-    list_display = ("id", "title", "category", "instructor", "lessons_total", "lessons_active", "lessons_archived")
+    list_display = ("id", "photo","title", "category", "instructor", "lessons_total", "lessons_active", "lessons_archived")
     list_filter = ("category", "instructor")
     search_fields = ("title", "description", "category__name", "instructor__username", "instructor__email")
     ordering = ("id",)
