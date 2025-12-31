@@ -38,7 +38,8 @@ from .views import (
     AnalyticsOverviewView,
     CourseDetailAnalyticsView,
     TopLessonsAnalyticsView,
-    CoursesAnalyticsView
+    CoursesAnalyticsView,
+    SettingsSeiteView
 )
 
 # Если ты уже вынес OAuth в отдельный файл views_youtube.py — подключай так:
@@ -57,6 +58,8 @@ urlpatterns = [
     # =========================
     # AUTH (JWT)
     # =========================
+    path("settings/", SettingsSeiteView.as_view(), name="settings"),
+
     path("auth/register/", RegisterView.as_view(), name="auth-register"),
     path("auth/login/", EmailTokenObtainPairView.as_view(), name="auth-login"),
     path("auth/refresh/", TokenRefreshView.as_view(), name="auth-refresh"),

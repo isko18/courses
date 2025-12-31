@@ -21,7 +21,8 @@ from .models import (
     Homework,
     ProjectYouTubeCredential,
     CourseDailyAnalytics,
-    CourseAnalytics
+    CourseAnalytics,
+    SettingsSite
 )
 from .permissions import IsTeacher, IsStudent, IsAdminRole
 from .serializers import (
@@ -47,7 +48,8 @@ from .serializers import (
     AnalyticsOverviewSerializer, 
     CourseAnalyticsSerializer,
     TopLessonSerializer,
-    CourseDailyAnalyticsSerializer
+    CourseDailyAnalyticsSerializer,
+    SettingsSeiteSerializer
 )
 from .youtube_service import build_youtube, creds_from_json, upload_video
 
@@ -56,6 +58,13 @@ from django.db.models import Sum, Count
 # =========================
 # AUTH
 # =========================
+
+class SettingsSeiteView(generics.ListAPIView):
+    permission_classes = [permissions.AllowAny]
+    serializer_class = SettingsSeiteSerializer
+    queryset = SettingsSite.objects.all()
+
+
 class RegisterView(generics.CreateAPIView):
     permission_classes = [permissions.AllowAny]
     serializer_class = RegisterSerializer
