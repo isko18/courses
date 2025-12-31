@@ -11,6 +11,7 @@ from django.utils.text import slugify
 # USERS
 # =========================
 class SettingsSite(models.Model):
+    logo = models.ImageField(upload_to="logo/", verbose_name="Логотип")
     title = models.CharField(max_length=255, verbose_name="Заголовок")
     description = models.TextField(verbose_name="Описание")
     banner = models.ImageField(upload_to="banner/", verbose_name="Фото для баннера")
