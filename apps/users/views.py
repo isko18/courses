@@ -3,6 +3,7 @@ import tempfile
 import shutil
 from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Q
+from django.db.models import BooleanField, Case, When, Value
 
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
@@ -105,6 +106,7 @@ class CategoryListCreateView(generics.ListCreateAPIView):
         ).order_by("id")
 
 
+
 class CategoryDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = CategorySerializer
     queryset = Category.objects.all()
@@ -142,6 +144,7 @@ class CourseListCreateView(generics.ListCreateAPIView):
 
         return qs.order_by("id")
 
+
     def perform_create(self, serializer):
         serializer.save(instructor=self.request.user)
 
@@ -178,6 +181,7 @@ class TariffListView(generics.ListAPIView):
         return qs.order_by("id")
 
 
+
 class LessonListPublicView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]
     serializer_class = LessonPublicSerializer
@@ -187,7 +191,8 @@ class LessonListPublicView(generics.ListAPIView):
         course_id = self.request.query_params.get("course_id")
         if course_id:
             qs = qs.filter(course_id=course_id)
-        return qs.order_by("id")
+        return qs.order_by("order", "id")
+
 
 
 # =========================
@@ -244,9 +249,17 @@ class MyCoursesView(APIView):
 
         result = []
         for access in accesses:
-            lessons_qs = Lesson.objects.filter(course=access.course, is_archived=False).order_by("id")
+            lessons_qs = Lesson.objects.filter(course=access.course, is_archived=False).order_by("order", "id")
+
             opened_subq = LessonOpen.objects.filter(access=access, lesson_id=OuterRef("pk"))
-            lessons_qs = lessons_qs.annotate(is_opened=Exists(opened_subq))
+            lessons_qs = lessons_qs.annotate(
+                is_opened=Exists(opened_subq),
+                is_available=Case(
+                    When(order__lte=access.video_limit, then=Value(True)),
+                    default=Value(False),
+                    output_field=BooleanField(),
+                ),
+            )
 
             result.append({
                 "access": CourseAccessSerializer(access).data,
@@ -284,20 +297,21 @@ class OpenLessonView(APIView):
         if not access:
             return Response({"detail": "Нет доступа."}, status=403)
 
+        # ✅ ГЛАВНАЯ ПРОВЕРКА
+        if lesson.order > access.video_limit:
+            return Response({"detail": "Тариф не позволяет открыть этот урок."}, status=402)
+
+        # если уже открывали — просто отдаём видео
         if LessonOpen.objects.filter(access=access, lesson=lesson).exists():
             return Response({"lesson": LessonVideoSerializer(lesson).data})
 
-        if access.used_videos >= access.video_limit:
-            return Response({"detail": "Лимит исчерпан."}, status=402)
+        LessonOpen.objects.get_or_create(access=access, lesson=lesson)
 
-        LessonOpen.objects.create(access=access, lesson=lesson)
-        access.used_videos += 1
-        access.save(update_fields=["used_videos"])
 
-        # ✅ АНАЛИТИКА
         on_lesson_open(access, lesson)
 
         return Response({"lesson": LessonVideoSerializer(lesson).data})
+
 # =========================
 # STUDENT: HOMEWORK
 # =========================
@@ -370,7 +384,8 @@ class TeacherLessonListCreateView(generics.ListCreateAPIView):
         if search:
             qs = qs.filter(title__icontains=search)
 
-        return qs.order_by("-id")
+        return qs.order_by("order", "id")
+
 
     def get_serializer_class(self):
         if self.request.method == "POST":
