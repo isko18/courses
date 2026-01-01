@@ -54,6 +54,12 @@ from .serializers import (
 from .youtube_service import build_youtube, creds_from_json, upload_video
 
 from django.db.models import Sum, Count
+from apps.users.analytics import (
+    on_course_activated,
+    on_lesson_open,
+    on_homework_submitted,
+    on_homework_accepted,
+)
 
 # =========================
 # AUTH
@@ -85,20 +91,43 @@ class MeView(generics.RetrieveAPIView):
 # =========================
 # VITRINA (PUBLIC)
 # =========================
-class CategoryListView(generics.ListAPIView):
-    permission_classes = [permissions.AllowAny]
+class CategoryListCreateView(generics.ListCreateAPIView):
     serializer_class = CategorySerializer
 
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [permissions.IsAuthenticated(), IsAdminRole()]
+        return [permissions.AllowAny()]
+
     def get_queryset(self):
-        return Category.objects.annotate(courses_count=Count("courses")).order_by("id")
+        return Category.objects.annotate(
+            courses_count=Count("courses")
+        ).order_by("id")
 
 
-class CourseListView(generics.ListAPIView):
-    permission_classes = [permissions.AllowAny]
+class CategoryDetailView(generics.RetrieveUpdateAPIView):
+    serializer_class = CategorySerializer
+    queryset = Category.objects.all()
+    http_method_names = ["get", "patch"]
+
+    def get_permissions(self):
+        if self.request.method == "PATCH":
+            return [permissions.IsAuthenticated(), IsAdminRole()]
+        return [permissions.AllowAny()]
+
+
+class CourseListCreateView(generics.ListCreateAPIView):
     serializer_class = CourseSerializer
 
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [permissions.IsAuthenticated(), IsTeacher()]
+        return [permissions.AllowAny()]
+
     def get_queryset(self):
-        qs = Course.objects.select_related("category", "instructor").annotate(
+        qs = Course.objects.select_related(
+            "category", "instructor"
+        ).annotate(
             lessons_count=Count("lessons"),
             tariffs_count=Count("tariffs"),
         )
@@ -113,14 +142,28 @@ class CourseListView(generics.ListAPIView):
 
         return qs.order_by("id")
 
+    def perform_create(self, serializer):
+        serializer.save(instructor=self.request.user)
 
-class CourseDetailView(generics.RetrieveAPIView):
-    permission_classes = [permissions.AllowAny]
+
+
+class CourseDetailView(generics.RetrieveUpdateAPIView):
     serializer_class = CourseSerializer
-    queryset = Course.objects.select_related("category", "instructor").annotate(
-        lessons_count=Count("lessons"),
-        tariffs_count=Count("tariffs"),
-    )
+    http_method_names = ["get", "patch"]
+
+    def get_permissions(self):
+        if self.request.method == "PATCH":
+            return [permissions.IsAuthenticated(), IsTeacher()]
+        return [permissions.AllowAny()]
+
+    def get_queryset(self):
+        qs = Course.objects.select_related("category", "instructor")
+
+        # teacher может редактировать только свои курсы
+        if self.request.method == "PATCH":
+            qs = qs.filter(instructor=self.request.user)
+
+        return qs
 
 
 class TariffListView(generics.ListAPIView):
@@ -136,20 +179,14 @@ class TariffListView(generics.ListAPIView):
 
 
 class LessonListPublicView(generics.ListAPIView):
-    """
-    Публичный список уроков курса.
-    ВАЖНО: video_url студент получит только через /lessons/open/
-    """
     permission_classes = [permissions.AllowAny]
     serializer_class = LessonPublicSerializer
 
     def get_queryset(self):
         qs = Lesson.objects.select_related("course").filter(is_archived=False)
-
         course_id = self.request.query_params.get("course_id")
         if course_id:
             qs = qs.filter(course_id=course_id)
-
         return qs.order_by("id")
 
 
@@ -163,28 +200,32 @@ class ActivateTokenView(APIView):
     def post(self, request):
         ser = ActivateTokenSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        token = ser.validated_data["token"]
 
-        access = CourseAccess.objects.select_for_update().filter(token=token).first()
+        access = CourseAccess.objects.select_for_update().filter(
+            token=ser.validated_data["token"]
+        ).first()
+
         if not access:
-            return Response({"detail": "Токен не найден."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "Токен не найден."}, status=404)
 
         if not access.is_active:
-            return Response({"detail": "Доступ по токену отключён."}, status=status.HTTP_400_BAD_REQUEST)
-
-        if access.user_id == request.user.id:
-            return Response(CourseAccessSerializer(access).data, status=status.HTTP_200_OK)
+            return Response({"detail": "Доступ отключён."}, status=400)
 
         if access.user_id and access.user_id != request.user.id:
-            return Response({"detail": "Токен уже активирован другим пользователем."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Токен уже активирован."}, status=400)
 
-        exists_same = CourseAccess.objects.filter(user=request.user, course=access.course).exists()
-        if exists_same:
-            return Response({"detail": "У вас уже есть доступ к этому курсу."}, status=status.HTTP_400_BAD_REQUEST)
+        if CourseAccess.objects.filter(
+            user=request.user, course=access.course
+        ).exists():
+            return Response({"detail": "Доступ уже есть."}, status=400)
 
         access.user = request.user
         access.save(update_fields=["user"])
-        return Response(CourseAccessSerializer(access).data, status=status.HTTP_200_OK)
+
+        # ✅ АНАЛИТИКА
+        on_course_activated(access)
+
+        return Response(CourseAccessSerializer(access).data)
 
 
 # =========================
@@ -225,36 +266,38 @@ class OpenLessonView(APIView):
     def post(self, request):
         ser = OpenLessonSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
-        lesson_id = ser.validated_data["lesson_id"]
 
-        lesson = Lesson.objects.select_related("course").filter(id=lesson_id, is_archived=False).first()
+        lesson = Lesson.objects.select_related("course").filter(
+            id=ser.validated_data["lesson_id"],
+            is_archived=False,
+        ).first()
+
         if not lesson:
-            return Response({"detail": "Урок не найден."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({"detail": "Урок не найден."}, status=404)
 
-        access = (
-            CourseAccess.objects
-            .select_for_update()
-            .select_related("course")
-            .filter(user=request.user, course=lesson.course, is_active=True)
-            .first()
-        )
+        access = CourseAccess.objects.select_for_update().filter(
+            user=request.user,
+            course=lesson.course,
+            is_active=True,
+        ).first()
+
         if not access:
-            return Response({"detail": "Нет доступа к курсу."}, status=status.HTTP_403_FORBIDDEN)
+            return Response({"detail": "Нет доступа."}, status=403)
 
-        already = LessonOpen.objects.filter(access=access, lesson=lesson).exists()
-        if already:
-            return Response({"lesson": LessonVideoSerializer(lesson).data}, status=status.HTTP_200_OK)
+        if LessonOpen.objects.filter(access=access, lesson=lesson).exists():
+            return Response({"lesson": LessonVideoSerializer(lesson).data})
 
         if access.used_videos >= access.video_limit:
-            return Response({"detail": "Лимит видео исчерпан. Купите новый тариф."}, status=status.HTTP_402_PAYMENT_REQUIRED)
+            return Response({"detail": "Лимит исчерпан."}, status=402)
 
         LessonOpen.objects.create(access=access, lesson=lesson)
         access.used_videos += 1
         access.save(update_fields=["used_videos"])
 
-        return Response({"lesson": LessonVideoSerializer(lesson).data}, status=status.HTTP_200_OK)
+        # ✅ АНАЛИТИКА
+        on_lesson_open(access, lesson)
 
-
+        return Response({"lesson": LessonVideoSerializer(lesson).data})
 # =========================
 # STUDENT: HOMEWORK
 # =========================
@@ -262,14 +305,22 @@ class HomeworkCreateView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated, IsStudent]
     serializer_class = HomeworkCreateSerializer
 
+    @transaction.atomic
     def perform_create(self, serializer):
         lesson = serializer.validated_data["lesson"]
-        has_access = CourseAccess.objects.filter(user=self.request.user, course=lesson.course, is_active=True).exists()
-        if not has_access:
+
+        if not CourseAccess.objects.filter(
+            user=self.request.user,
+            course=lesson.course,
+            is_active=True
+        ).exists():
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("Нет доступа к курсу.")
 
-        serializer.save(user=self.request.user)
+        hw = serializer.save(user=self.request.user)
+
+        on_homework_submitted(hw)
+        
 
 
 class MyHomeworksView(generics.ListAPIView):
@@ -287,7 +338,6 @@ class MyHomeworkUpdateView(generics.UpdateAPIView):
     http_method_names = ["patch"]
 
     def get_queryset(self):
-        # студент может редактировать ТОЛЬКО свои ДЗ
         return Homework.objects.filter(user=self.request.user)
 
 # =========================
@@ -506,9 +556,17 @@ class TeacherHomeworkUpdateView(generics.UpdateAPIView):
     serializer_class = TeacherHomeworkUpdateSerializer
 
     def get_queryset(self):
-        return Homework.objects.select_related("lesson", "lesson__course").filter(
+        return Homework.objects.filter(
             lesson__course__instructor=self.request.user
         )
+
+    def perform_update(self, serializer):
+        old_status = self.get_object().status
+        hw = serializer.save()
+
+        if old_status != "accepted" and hw.status == "accepted":
+            # ✅ АНАЛИТИКА
+            on_homework_accepted(hw)
 
 
 
@@ -517,25 +575,14 @@ class AnalyticsOverviewView(APIView):
 
     def get(self, request):
         data = {
-            "total_revenue": CourseAnalytics.objects.aggregate(
-                s=Sum("total_revenue")
-            )["s"] or 0,
-
-            "total_purchases": CourseAnalytics.objects.aggregate(
-                s=Sum("total_purchases")
-            )["s"] or 0,
-
-            "total_students": CourseAnalytics.objects.aggregate(
-                s=Sum("total_students")
-            )["s"] or 0,
-
+            "total_revenue": CourseAnalytics.objects.aggregate(s=Sum("total_revenue"))["s"] or 0,
+            "total_purchases": CourseAnalytics.objects.aggregate(s=Sum("total_purchases"))["s"] or 0,
+            "total_students": CourseAnalytics.objects.aggregate(s=Sum("total_students"))["s"] or 0,
             "total_courses": Course.objects.count(),
             "total_lessons": Lesson.objects.filter(is_archived=False).count(),
-
             "total_homeworks": Homework.objects.count(),
             "accepted_homeworks": Homework.objects.filter(status="accepted").count(),
         }
-
         return Response(AnalyticsOverviewSerializer(data).data)
     
 
@@ -545,26 +592,19 @@ class CoursesAnalyticsView(APIView):
     def get(self, request):
         qs = CourseAnalytics.objects.select_related("course").order_by("-total_revenue")
         return Response(CourseAnalyticsSerializer(qs, many=True).data)
-    
 
 class CourseDetailAnalyticsView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsAdminRole]
 
     def get(self, request, course_id):
-        analytics = CourseAnalytics.objects.select_related("course").get(
-            course_id=course_id
-        )
-
-        daily = (
-            CourseDailyAnalytics.objects
-            .filter(course_id=course_id)
-            .order_by("date")
-        )
+        analytics = CourseAnalytics.objects.select_related("course").get(course_id=course_id)
+        daily = CourseDailyAnalytics.objects.filter(course_id=course_id).order_by("date")
 
         return Response({
             "course": CourseAnalyticsSerializer(analytics).data,
             "daily": CourseDailyAnalyticsSerializer(daily, many=True).data,
         })
+    
 
 class TopLessonsAnalyticsView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsAdminRole]

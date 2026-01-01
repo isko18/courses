@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
-from django.db.models import Sum, Count, Q
+from django.db.models import Sum, Count
 
 from apps.users.models import (
     Course,
@@ -16,39 +16,47 @@ from apps.users.models import (
 
 
 class Command(BaseCommand):
-    help = "Recalculate course and daily analytics"
+    help = "Rebuild course and daily analytics from source tables"
 
-    @transaction.atomic
     def handle(self, *args, **options):
         today = date.today()
+        start_date = today - timedelta(days=30)
 
-        self.stdout.write("Recalculating CourseAnalytics...")
+        self.stdout.write("Rebuilding analytics...")
 
         for course in Course.objects.all():
-            purchases_qs = CourseAccess.objects.filter(
+
+            # =========================
+            # TOTAL ANALYTICS
+            # =========================
+            accesses = CourseAccess.objects.filter(
                 course=course,
                 is_active=True,
             )
 
-            total_purchases = purchases_qs.count()
-            total_students = purchases_qs.values("user_id").distinct().count()
-            total_revenue = purchases_qs.aggregate(
+            total_purchases = accesses.count()
+            total_students = accesses.values("user_id").distinct().count()
+            total_revenue = accesses.aggregate(
                 s=Sum("tariff__price")
             )["s"] or 0
 
-            total_lessons = Lesson.objects.filter(
+            lessons_count = Lesson.objects.filter(
                 course=course,
                 is_archived=False,
             ).count()
 
+            # уникальные opens: lesson + user
             total_opens = LessonOpen.objects.filter(
-                lesson__course=course
-            ).count()
+                lesson__course=course,
+            ).values(
+                "lesson_id", "access__user_id"
+            ).distinct().count()
 
-            if total_students and total_lessons:
-                completion_rate = total_opens / (total_students * total_lessons)
-            else:
-                completion_rate = 0
+            completion_rate = (
+                total_opens / (total_students * lessons_count)
+                if total_students and lessons_count
+                else 0
+            )
 
             CourseAnalytics.objects.update_or_create(
                 course=course,
@@ -56,27 +64,24 @@ class Command(BaseCommand):
                     "total_purchases": total_purchases,
                     "total_students": total_students,
                     "total_revenue": total_revenue,
-                    "total_lessons": total_lessons,
+                    "total_lessons": lessons_count,
                     "total_opens": total_opens,
                     "completion_rate": round(completion_rate, 4),
                 },
             )
 
-        self.stdout.write("Recalculating CourseDailyAnalytics...")
-
-        # считаем, например, последние 30 дней
-        start_date = today - timedelta(days=30)
-
-        for course in Course.objects.all():
+            # =========================
+            # DAILY ANALYTICS
+            # =========================
             current = start_date
             while current <= today:
-                purchases_day = CourseAccess.objects.filter(
+                day_accesses = CourseAccess.objects.filter(
                     course=course,
-                    created_at__date=current,
                     is_active=True,
+                    created_at__date=current,
                 )
 
-                opens_day = LessonOpen.objects.filter(
+                day_opens = LessonOpen.objects.filter(
                     lesson__course=course,
                     opened_at__date=current,
                 )
@@ -85,12 +90,12 @@ class Command(BaseCommand):
                     course=course,
                     date=current,
                     defaults={
-                        "purchases": purchases_day.count(),
-                        "revenue": purchases_day.aggregate(
+                        "purchases": day_accesses.count(),
+                        "revenue": day_accesses.aggregate(
                             s=Sum("tariff__price")
                         )["s"] or 0,
-                        "opened_lessons": opens_day.count(),
-                        "unique_students": opens_day.values(
+                        "opened_lessons": day_opens.count(),
+                        "unique_students": day_opens.values(
                             "access__user_id"
                         ).distinct().count(),
                         "homeworks_submitted": Homework.objects.filter(
@@ -99,12 +104,12 @@ class Command(BaseCommand):
                         ).count(),
                         "homeworks_accepted": Homework.objects.filter(
                             lesson__course=course,
-                            created_at__date=current,
                             status="accepted",
+                            updated_at__date=current,
                         ).count(),
                     },
                 )
 
                 current += timedelta(days=1)
 
-        self.stdout.write(self.style.SUCCESS("Analytics recalculated successfully"))
+        self.stdout.write(self.style.SUCCESS("Analytics rebuild completed successfully"))

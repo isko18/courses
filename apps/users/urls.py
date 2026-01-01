@@ -1,5 +1,5 @@
 from django.urls import path
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
     # auth
@@ -8,13 +8,14 @@ from .views import (
     MeView,
 
     # vitrina
-    CategoryListView,
-    CourseListView,
+    CategoryListCreateView,
+    CategoryDetailView,
+    CourseListCreateView,
     CourseDetailView,
     TariffListView,
     LessonListPublicView,
 
-    # token activate + student
+    # student
     ActivateTokenView,
     MyCoursesView,
     OpenLessonView,
@@ -22,7 +23,7 @@ from .views import (
     MyHomeworksView,
     MyHomeworkUpdateView,
 
-    # teacher lessons + archive
+    # teacher lessons
     TeacherLessonListCreateView,
     TeacherLessonDetailView,
     TeacherLessonArchiveView,
@@ -32,34 +33,36 @@ from .views import (
     TeacherHomeworksView,
     TeacherHomeworkUpdateView,
 
-    # youtube upload create lesson
+    # youtube upload
     TeacherCreateLessonWithUploadView,
 
+    # analytics
     AnalyticsOverviewView,
     CourseDetailAnalyticsView,
     TopLessonsAnalyticsView,
     CoursesAnalyticsView,
-    SettingsSeiteView
+
+    # settings
+    SettingsSeiteView,
 )
 
-# Если ты уже вынес OAuth в отдельный файл views_youtube.py — подключай так:
-# from .views_youtube import YouTubeProjectAuthStartView, YouTubeProjectAuthCallbackView, YouTubeProjectStatusView
-# Если OAuth ты ещё не добавлял — просто убери 3 строки ниже.
 from .views_youtube import (
     YouTubeProjectAuthStartView,
     YouTubeProjectAuthCallbackView,
     YouTubeProjectStatusView,
     TeacherRefreshLessonYouTubeStatusView,
-    TeacherRefreshYouTubeStatusBatchView
-    
+    TeacherRefreshYouTubeStatusBatchView,
 )
 
 urlpatterns = [
     # =========================
-    # AUTH (JWT)
+    # SETTINGS
     # =========================
     path("settings/", SettingsSeiteView.as_view(), name="settings"),
 
+    # =========================
+    # AUTH (JWT)
+    # =========================
     path("auth/register/", RegisterView.as_view(), name="auth-register"),
     path("auth/login/", EmailTokenObtainPairView.as_view(), name="auth-login"),
     path("auth/refresh/", TokenRefreshView.as_view(), name="auth-refresh"),
@@ -68,23 +71,25 @@ urlpatterns = [
     # =========================
     # PUBLIC VITRINA
     # =========================
-    path("categories/", CategoryListView.as_view(), name="categories-list"),
-    path("courses/", CourseListView.as_view(), name="courses-list"),
+    path("categories/", CategoryListCreateView.as_view(), name="categories-list-create"),
+    path("categories/<int:pk>/", CategoryDetailView.as_view(), name="categories-detail"),
+    path("courses/", CourseListCreateView.as_view(), name="courses-list-create"),
     path("courses/<int:pk>/", CourseDetailView.as_view(), name="courses-detail"),
     path("tariffs/", TariffListView.as_view(), name="tariffs-list"),
     path("lessons/", LessonListPublicView.as_view(), name="lessons-public-list"),
 
     # =========================
-    # STUDENT: TOKEN + CABINET
+    # STUDENT
     # =========================
     path("access/activate-token/", ActivateTokenView.as_view(), name="access-activate-token"),
     path("me/courses/", MyCoursesView.as_view(), name="me-courses"),
     path("lessons/open/", OpenLessonView.as_view(), name="lessons-open"),
     path("homeworks/", HomeworkCreateView.as_view(), name="homeworks-create"),
     path("me/homeworks/", MyHomeworksView.as_view(), name="me-homeworks"),
-    path("me/homeworks/<int:id>/", MyHomeworkUpdateView.as_view(), name="my-homework-detail",),
+    path("me/homeworks/<int:id>/", MyHomeworkUpdateView.as_view(), name="me-homework-update"),
+
     # =========================
-    # TEACHER: LESSONS CRUD + ARCHIVE
+    # TEACHER: LESSONS
     # =========================
     path("teacher/lessons/", TeacherLessonListCreateView.as_view(), name="teacher-lessons"),
     path("teacher/lessons/<int:pk>/", TeacherLessonDetailView.as_view(), name="teacher-lesson-detail"),
@@ -92,27 +97,58 @@ urlpatterns = [
     path("teacher/lessons/<int:pk>/unarchive/", TeacherLessonUnarchiveView.as_view(), name="teacher-lesson-unarchive"),
 
     # =========================
-    # TEACHER: HOMEWORK CHECK
+    # TEACHER: HOMEWORKS
     # =========================
     path("teacher/homeworks/", TeacherHomeworksView.as_view(), name="teacher-homeworks"),
     path("teacher/homeworks/<int:pk>/", TeacherHomeworkUpdateView.as_view(), name="teacher-homework-update"),
 
     # =========================
-    # TEACHER: CREATE LESSON + UPLOAD VIDEO
+    # TEACHER: UPLOAD VIDEO
     # =========================
-    path("teacher/lessons/create-with-upload/", TeacherCreateLessonWithUploadView.as_view(), name="teacher-lesson-upload"),
+    path(
+        "teacher/lessons/create-with-upload/",
+        TeacherCreateLessonWithUploadView.as_view(),
+        name="teacher-lesson-upload",
+    ),
 
     # =========================
-    # YOUTUBE PROJECT OAUTH (ADMIN ONLY)
+    # YOUTUBE PROJECT (ADMIN / TEACHER)
     # =========================
-    path("youtube/project/oauth/start/", YouTubeProjectAuthStartView.as_view(), name="yt-project-oauth-start"),
-    path("youtube/project/oauth/callback/", YouTubeProjectAuthCallbackView.as_view(), name="yt-project-oauth-callback"),
-    path("youtube/project/status/", YouTubeProjectStatusView.as_view(), name="yt-project-status"),
-    path("youtube/lessons/<int:pk>/refresh-status/", TeacherRefreshLessonYouTubeStatusView.as_view()),
-    path("youtube/lessons/refresh-status-batch/", TeacherRefreshYouTubeStatusBatchView.as_view()),
+    path(
+        "youtube/project/oauth/start/",
+        YouTubeProjectAuthStartView.as_view(),
+        name="youtube-project-oauth-start",
+    ),
+    path(
+        "youtube/project/oauth/callback/",
+        YouTubeProjectAuthCallbackView.as_view(),
+        name="youtube-project-oauth-callback",
+    ),
+    path(
+        "youtube/project/status/",
+        YouTubeProjectStatusView.as_view(),
+        name="youtube-project-status",
+    ),
+    path(
+        "youtube/lessons/<int:pk>/refresh-status/",
+        TeacherRefreshLessonYouTubeStatusView.as_view(),
+        name="youtube-lesson-refresh-status",
+    ),
+    path(
+        "youtube/lessons/refresh-status-batch/",
+        TeacherRefreshYouTubeStatusBatchView.as_view(),
+        name="youtube-lesson-refresh-status-batch",
+    ),
 
-    path("analystic/overview/", AnalyticsOverviewView.as_view()),
-    path("analystic/courses/", CoursesAnalyticsView.as_view()),
-    path("analystic/courses/<int:course_id>/", CourseDetailAnalyticsView.as_view()),
-    path("analystic/lessons/top/", TopLessonsAnalyticsView.as_view()),
+    # =========================
+    # ANALYTICS (ADMIN)
+    # =========================
+    path("analytics/overview/", AnalyticsOverviewView.as_view(), name="analytics-overview"),
+    path("analytics/courses/", CoursesAnalyticsView.as_view(), name="analytics-courses"),
+    path(
+        "analytics/courses/<int:course_id>/",
+        CourseDetailAnalyticsView.as_view(),
+        name="analytics-course-detail",
+    ),
+    path("analytics/lessons/top/", TopLessonsAnalyticsView.as_view(), name="analytics-top-lessons"),
 ]
