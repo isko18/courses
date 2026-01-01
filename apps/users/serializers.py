@@ -140,11 +140,9 @@ class LessonPublicSerializer(serializers.ModelSerializer):
             "youtube_video_id",
             "video_duration",
             "is_archived",
-            # ✅ ДЗ (что видит студент на витрине/в списке уроков)
             "homework_title",
             "homework_description",
             "homework_link",
-            # ⚠️ homework_file тут лучше не светить ссылкой (без secure download)
             "created_at",
             "updated_at",
         )
@@ -191,7 +189,7 @@ class MyCourseLessonSerializer(serializers.ModelSerializer):
         model = Lesson
         fields = (
             "id",
-            "order",            # ✅ ДОБАВИТЬ
+            "order",            
             "title",
             "description",
             "video_duration",
@@ -302,13 +300,13 @@ class TeacherLessonSerializer(serializers.ModelSerializer):
             "id",
             "course",
             "title",
+            "order",
             "description",
             "video_url",
             "youtube_video_id",
             "youtube_status",
             "youtube_error",
             "is_archived",
-            # ✅ ДЗ
             "homework_title",
             "homework_description",
             "homework_link",
