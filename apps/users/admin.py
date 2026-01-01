@@ -212,9 +212,9 @@ class TariffAdmin(admin.ModelAdmin):
         "video_limit",
     )
     list_filter = ("course", "limit_type")
+    search_fields = ("title", "course__title")  # ✅ ВАЖНО
     readonly_fields = ("video_limit",)
     ordering = ("id",)
-
 
 # =========================
 # COURSE ACCESS
