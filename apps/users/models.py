@@ -404,7 +404,7 @@ class Homework(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="homeworks", verbose_name="Пользователь")
     content = models.TextField(verbose_name="Ответ / ссылка на ДЗ")
 
-    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default="rework", verbose_name="Статус")
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="rework", verbose_name="Статус")
     comment = models.TextField(blank=True, null=True, verbose_name="Комментарий преподавателя")
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
