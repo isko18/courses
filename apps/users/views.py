@@ -149,7 +149,6 @@ class CourseListCreateView(generics.ListCreateAPIView):
         serializer.save(instructor=self.request.user)
 
 
-
 class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CourseSerializer
     http_method_names = ["get", "patch", "delete"]
@@ -161,12 +160,12 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_queryset(self):
         qs = Course.objects.select_related("category", "instructor")
-
-        # teacher может редактировать и удалять ТОЛЬКО свои курсы
         if self.request.method in ("PATCH", "DELETE"):
             qs = qs.filter(instructor=self.request.user)
-
         return qs
+
+    def perform_destroy(self, instance):
+        instance.archive()  # ❗ НЕ delete()
 
 
 
