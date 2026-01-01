@@ -395,6 +395,7 @@ class LessonOpen(models.Model):
 class Homework(models.Model):
     STATUS_CHOICES = [
         ("accepted", "Принято"),
+        ("examination", "На проверке"),
         ("rework", "На доработку"),
         ("declined", "Отклонено"),
     ]
