@@ -32,7 +32,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ("id", "email", "phone", "password", "password2")
+        fields = ("id", "email", "username", "phone", "password", "password2")
 
     def validate(self, attrs):
         if attrs["password"] != attrs["password2"]:
@@ -107,23 +107,23 @@ class CourseSerializer(serializers.ModelSerializer):
 
 
 class TariffSerializer(serializers.ModelSerializer):
-    course_title = serializers.CharField(source="course.title", read_only=True)
+    access_description = serializers.SerializerMethodField()
+
+    def get_access_description(self, obj):
+        if obj.limit_type == "all":
+            return "Доступ ко всем урокам курса"
+        return f"Доступ к первым {obj.video_limit} урокам"
 
     class Meta:
         model = Tariff
         fields = (
             "id",
-            "course",
-            "course_title",
             "title",
             "price",
-            "limit_type",
-            "limit_value",
             "video_limit",
-            "created_at",
-            "updated_at",
+            "access_description",
         )
-        read_only_fields = ("video_limit",)
+
 
 
 class LessonPublicSerializer(serializers.ModelSerializer):
@@ -166,7 +166,6 @@ class ActivateTokenSerializer(serializers.Serializer):
 class CourseAccessSerializer(serializers.ModelSerializer):
     course_title = serializers.CharField(source="course.title", read_only=True)
     tariff_title = serializers.CharField(source="tariff.title", read_only=True)
-    remaining_videos = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = CourseAccess
@@ -176,33 +175,34 @@ class CourseAccessSerializer(serializers.ModelSerializer):
             "course_title",
             "tariff",
             "tariff_title",
-            "token",
-            "is_active",
             "video_limit",
-            "used_videos",
-            "remaining_videos",
+            "is_active",
             "created_at",
         )
-        read_only_fields = ("token", "video_limit", "created_at")
+        read_only_fields = ("video_limit", "created_at")
+
 
 
 class MyCourseLessonSerializer(serializers.ModelSerializer):
     is_opened = serializers.BooleanField(read_only=True)
+    is_available = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Lesson
         fields = (
             "id",
+            "order",            # ✅ ДОБАВИТЬ
             "title",
             "description",
             "video_duration",
             "is_archived",
             "is_opened",
-            # ✅ ДЗ (чтобы в “Мои курсы” сразу показать задание)
+            "is_available",
             "homework_title",
             "homework_description",
             "homework_link",
         )
+
 
 
 class LessonVideoSerializer(serializers.ModelSerializer):

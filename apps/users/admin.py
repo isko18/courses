@@ -61,7 +61,7 @@ class ProjectYouTubeCredentialAdmin(admin.ModelAdmin):
 # =========================
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ("id", "photo","name")
+    list_display = ("id", "name", "photo")
     search_fields = ("name",)
     ordering = ("id",)
 

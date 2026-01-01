@@ -151,7 +151,11 @@ class Lesson(models.Model):
         related_name="lessons",
         verbose_name="Курс",
     )
-
+    order = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Порядок урока",
+        help_text="Чем меньше — тем раньше урок"
+    )
     # YouTube URL
     video_url = models.URLField(blank=True, default="", verbose_name="Ссылка на видео")
     youtube_video_id = models.CharField(max_length=32, blank=True, default="", verbose_name="YouTube videoId")
@@ -220,11 +224,12 @@ class Lesson(models.Model):
         verbose_name_plural = "Уроки"
         indexes = [
             models.Index(fields=["course", "is_archived"]),
+            models.Index(fields=["course", "order"]),
             models.Index(fields=["youtube_status"]),
             models.Index(fields=["title"]),
             models.Index(fields=["created_at"]),
         ]
-        ordering = ["id"]
+        ordering = ["order","id"]
 
     def __str__(self):
         return self.title
@@ -314,62 +319,35 @@ class Tariff(models.Model):
 # ACCESS / PURCHASE (FOREVER)
 # =========================
 class CourseAccess(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="course_accesses", blank=True, null=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="course_accesses")
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="accesses")
-    tariff = models.ForeignKey(Tariff, on_delete=models.PROTECT, related_name="accesses")
+    tariff = models.ForeignKey(Tariff, on_delete=models.PROTECT)
 
     token = models.CharField(max_length=64, unique=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-
-    video_limit = models.PositiveIntegerField(default=0)
-    used_videos = models.PositiveIntegerField(default=0)
-
     is_active = models.BooleanField(default=True)
 
+    # ✅ СКОЛЬКО УРОКОВ РАЗРЕШЕНО
+    video_limit = models.PositiveIntegerField(editable=False)
+
     class Meta:
-        verbose_name = "Доступ к курсу"
-        verbose_name_plural = "Доступы к курсам"
-        constraints = [
-            models.UniqueConstraint(fields=["user", "course"], name="uniq_user_course_access"),
-        ]
-        indexes = [
-            models.Index(fields=["user", "course"]),
-            models.Index(fields=["token"]),
-            models.Index(fields=["is_active"]),
-        ]
-
-    def __str__(self):
-        return f"{self.user} → {self.course.title}"
-
-    @staticmethod
-    def gen_token():
-        return secrets.token_urlsafe(24)
-
-    def clean(self):
-        super().clean()
-
-        if self.tariff_id and self.course_id and self.tariff.course_id != self.course_id:
-            raise ValidationError("Тариф не принадлежит выбранному курсу.")
-
-        lessons_count = Lesson.objects.filter(course_id=self.course_id, is_archived=False).count() if self.course_id else 0
-        if self.course_id and lessons_count <= 0:
-            raise ValidationError("В курсе нет уроков. Нельзя выдать доступ.")
-
-        if self.tariff_id:
-            self.video_limit = int(self.tariff.video_limit)
-
-        if self.used_videos > self.video_limit:
-            raise ValidationError("used_videos не может быть больше video_limit.")
+        unique_together = ("user", "course")
 
     def save(self, *args, **kwargs):
         if not self.token:
-            self.token = self.gen_token()
-        self.full_clean()
+            self.token = secrets.token_urlsafe(24)
+        self.video_limit = self.tariff.video_limit
         super().save(*args, **kwargs)
 
-    @property
-    def remaining_videos(self):
-        return max(0, self.video_limit - self.used_videos)
+    def can_open_lesson(self, lesson: Lesson) -> bool:
+        if lesson.course_id != self.course_id:
+            return False
+        if lesson.is_archived:
+            return False
+        return lesson.order <= self.video_limit
+    
+    def __str__(self):
+        return f"{self.user} → {self.course}"
 
 
 class LessonOpen(models.Model):
