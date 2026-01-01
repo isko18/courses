@@ -319,7 +319,7 @@ class Tariff(models.Model):
 # ACCESS / PURCHASE (FOREVER)
 # =========================
 class CourseAccess(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="course_accesses")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="course_accesses", blank=True)
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="accesses")
     tariff = models.ForeignKey(Tariff, on_delete=models.PROTECT)
 
