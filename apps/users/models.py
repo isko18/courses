@@ -11,11 +11,11 @@ from django.utils.text import slugify
 # USERS
 # =========================
 class SettingsSite(models.Model):
-    logo = models.ImageField(upload_to="logo/", verbose_name="Логотип")
-    title = models.CharField(max_length=255, verbose_name="Заголовок")
-    description = models.TextField(verbose_name="Описание")
-    banner = models.ImageField(upload_to="banner/", verbose_name="Фото для баннера")
-    whatsapp_number = models.CharField(max_length=100, verbose_name="Номер whatsapp")
+    logo = models.ImageField(upload_to="logo/", verbose_name="Логотип", blank=True, null=True)
+    title = models.CharField(max_length=255, verbose_name="Заголовок", blank=True, null=True)
+    description = models.TextField(verbose_name="Описание", blank=True, null=True)
+    banner = models.ImageField(upload_to="banner/", verbose_name="Фото для баннера", blank=True, null=True)
+    whatsapp_number = models.CharField(max_length=100, verbose_name="Номер whatsapp", blank=True, null=True)
 
     def __str__(self):
         return str(self.title)
@@ -314,7 +314,7 @@ class Tariff(models.Model):
 # ACCESS / PURCHASE (FOREVER)
 # =========================
 class CourseAccess(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="course_accesses")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="course_accesses", blank=True, null=True)
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="accesses")
     tariff = models.ForeignKey(Tariff, on_delete=models.PROTECT, related_name="accesses")
 
