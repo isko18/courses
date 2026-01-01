@@ -152,21 +152,22 @@ class CourseListCreateView(generics.ListCreateAPIView):
 
 class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CourseSerializer
-    http_method_names = ["get", "patch"]
+    http_method_names = ["get", "patch", "delete"]
 
     def get_permissions(self):
-        if self.request.method == "PATCH":
+        if self.request.method in ("PATCH", "DELETE"):
             return [permissions.IsAuthenticated(), IsTeacher()]
         return [permissions.AllowAny()]
 
     def get_queryset(self):
         qs = Course.objects.select_related("category", "instructor")
 
-        # teacher может редактировать только свои курсы
-        if self.request.method == "PATCH":
+        # teacher может редактировать и удалять ТОЛЬКО свои курсы
+        if self.request.method in ("PATCH", "DELETE"):
             qs = qs.filter(instructor=self.request.user)
 
         return qs
+
 
 
 class TariffListView(generics.ListAPIView):
