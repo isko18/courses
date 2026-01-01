@@ -507,7 +507,7 @@ class TeacherCreateLessonWithUploadView(APIView):
                 file_path=tmp_path,
                 title=title,
                 description=description,
-                privacy_status="private",  # ✅ приватно
+                privacy_status="unlisted",  # ✅ приватно
                 category_id="27",
             )
 
