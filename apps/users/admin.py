@@ -16,17 +16,28 @@ from .models import (
     SettingsSite
 )
 
+# =========================
+# SETTINGS
+# =========================
+admin.site.register(SettingsSite)
 
 # =========================
 # USERS
 # =========================
-admin.site.register(SettingsSite)
-
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
-    list_display = ("id", "username", "email", "phone", "role", "is_active", "is_staff", "is_superuser")
+    list_display = (
+        "id",
+        "username",
+        "email",
+        "phone",
+        "role",
+        "is_active",
+        "is_staff",
+        "is_superuser",
+    )
     list_filter = ("role", "is_active", "is_staff", "is_superuser")
-    search_fields = ("username", "email", "phone", "first_name", "last_name")
+    search_fields = ("username", "email", "phone")
     ordering = ("id",)
 
     fieldsets = DjangoUserAdmin.fieldsets + (
@@ -35,25 +46,15 @@ class UserAdmin(DjangoUserAdmin):
 
 
 # =========================
-# YOUTUBE PROJECT CREDENTIAL (ONE ACCOUNT)
+# YOUTUBE PROJECT (SINGLETON)
 # =========================
 @admin.register(ProjectYouTubeCredential)
 class ProjectYouTubeCredentialAdmin(admin.ModelAdmin):
-    list_display = ("id", "channel_id", "updated_at", "created_at")
-    search_fields = ("channel_id",)
-    ordering = ("-updated_at",)
+    list_display = ("id", "channel_id", "updated_at")
     readonly_fields = ("created_at", "updated_at")
 
-    fieldsets = (
-        ("YouTube проекта", {"fields": ("channel_id", "credentials_json")}),
-        ("Служебное", {"fields": ("created_at", "updated_at")}),
-    )
-
     def has_add_permission(self, request):
-        # Разрешаем только одну запись (singleton)
-        if ProjectYouTubeCredential.objects.exists():
-            return False
-        return super().has_add_permission(request)
+        return not ProjectYouTubeCredential.objects.exists()
 
 
 # =========================
@@ -61,13 +62,13 @@ class ProjectYouTubeCredentialAdmin(admin.ModelAdmin):
 # =========================
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ("id", "name", "photo")
+    list_display = ("id", "name")
     search_fields = ("name",)
     ordering = ("id",)
 
 
 # =========================
-# LESSON INLINE (for Course)
+# LESSON INLINE (COURSE)
 # =========================
 class LessonInline(admin.TabularInline):
     model = Lesson
@@ -75,16 +76,14 @@ class LessonInline(admin.TabularInline):
     show_change_link = True
 
     fields = (
+        "order",
         "title",
         "youtube_status",
-        "youtube_video_id",
-        "video_url",
         "is_archived",
-        "homework_title",
-        "homework_link",
     )
 
-    readonly_fields = ("youtube_status", "youtube_video_id", "video_url")
+    ordering = ("order",)
+    readonly_fields = ("youtube_status",)
 
 
 # =========================
@@ -92,50 +91,59 @@ class LessonInline(admin.TabularInline):
 # =========================
 @admin.register(Course)
 class CourseAdmin(admin.ModelAdmin):
-    list_display = ("id", "photo","title", "category", "instructor", "lessons_total", "lessons_active", "lessons_archived")
+    list_display = (
+        "id",
+        "title",
+        "category",
+        "instructor",
+        "lessons_total",
+        "lessons_active",
+        "lessons_archived",
+    )
     list_filter = ("category", "instructor")
-    search_fields = ("title", "description", "category__name", "instructor__username", "instructor__email")
+    search_fields = ("title",)
     ordering = ("id",)
     inlines = [LessonInline]
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         return qs.annotate(
-            _lessons_total=Count("lessons", distinct=True),
-            _lessons_archived=Count("lessons", filter=Q(lessons__is_archived=True), distinct=True),
+            _lessons_total=Count("lessons"),
+            _lessons_archived=Count("lessons", filter=Q(lessons__is_archived=True)),
         )
 
-    @admin.display(description="Уроков (всего)")
+    @admin.display(description="Всего уроков")
     def lessons_total(self, obj):
-        return getattr(obj, "_lessons_total", obj.lessons.count())
+        return obj._lessons_total
 
-    @admin.display(description="Уроков (активные)")
+    @admin.display(description="Активных")
     def lessons_active(self, obj):
-        total = getattr(obj, "_lessons_total", obj.lessons.count())
-        archived = getattr(obj, "_lessons_archived", obj.lessons.filter(is_archived=True).count())
-        return max(0, total - archived)
+        return obj._lessons_total - obj._lessons_archived
 
-    @admin.display(description="Уроков (архив)")
+    @admin.display(description="В архиве")
     def lessons_archived(self, obj):
-        return getattr(obj, "_lessons_archived", obj.lessons.filter(is_archived=True).count())
+        return obj._lessons_archived
 
 
 # =========================
-# LESSON actions
+# LESSON ACTIONS
 # =========================
-@admin.action(description="Архивировать выбранные уроки")
+@admin.action(description="Архивировать")
 def archive_lessons(modeladmin, request, queryset):
-    queryset.update(is_archived=True, archived_at=timezone.now(), archived_by=request.user)
+    queryset.update(
+        is_archived=True,
+        archived_at=timezone.now(),
+        archived_by=request.user,
+    )
 
 
-@admin.action(description="Восстановить выбранные уроки")
+@admin.action(description="Восстановить")
 def unarchive_lessons(modeladmin, request, queryset):
-    queryset.update(is_archived=False, archived_at=None, archived_by=None)
-
-
-@admin.action(description="Сбросить YouTube-ошибку (youtube_error)")
-def clear_youtube_error(modeladmin, request, queryset):
-    queryset.update(youtube_error="")
+    queryset.update(
+        is_archived=False,
+        archived_at=None,
+        archived_by=None,
+    )
 
 
 # =========================
@@ -145,36 +153,45 @@ def clear_youtube_error(modeladmin, request, queryset):
 class LessonAdmin(admin.ModelAdmin):
     list_display = (
         "id",
+        "order",
         "title",
         "course",
         "youtube_status",
-        "youtube_video_id",
         "is_archived",
-        "created_at",
     )
     list_filter = ("course", "youtube_status", "is_archived")
-    search_fields = ("title", "course__title", "youtube_video_id", "video_url", "youtube_error", "homework_title")
-    ordering = ("-id",)
-    actions = [archive_lessons, unarchive_lessons, clear_youtube_error]
+    search_fields = ("title", "course__title")
+    ordering = ("course", "order")
+
+    actions = [archive_lessons, unarchive_lessons]
 
     readonly_fields = (
         "created_at",
         "updated_at",
         "archived_at",
         "archived_by",
+        "youtube_video_id",
+        "video_url",
+        "youtube_error",
     )
 
     fieldsets = (
-        ("Основное", {"fields": ("course", "title", "description", "video_duration")}),
-        ("YouTube", {"fields": ("video_url", "youtube_video_id", "youtube_status", "youtube_error", "youtube_uploaded_at")}),
-        ("Домашнее задание (что делает студент)", {"fields": ("homework_title", "homework_description", "homework_link", "homework_file")}),
-        ("Архив", {"fields": ("is_archived", "archived_at", "archived_by")}),
-        ("Служебное", {"fields": ("created_at", "updated_at")}),
+        ("Основное", {
+            "fields": ("course", "order", "title", "description", "video_duration")
+        }),
+        ("YouTube", {
+            "fields": ("video_url", "youtube_video_id", "youtube_status", "youtube_error")
+        }),
+        ("Домашнее задание", {
+            "fields": ("homework_title", "homework_description", "homework_link", "homework_file")
+        }),
+        ("Архив", {
+            "fields": ("is_archived", "archived_at", "archived_by")
+        }),
     )
 
     def get_queryset(self, request):
-        qs = super().get_queryset(request).select_related("course", "archived_by", "course__instructor")
-        # если вдруг дать доступ teacher-ам в админку — видят только своё
+        qs = super().get_queryset(request).select_related("course")
         if getattr(request.user, "role", "") == "teacher" and not request.user.is_superuser:
             return qs.filter(course__instructor=request.user)
         return qs
@@ -185,28 +202,23 @@ class LessonAdmin(admin.ModelAdmin):
 # =========================
 @admin.register(Tariff)
 class TariffAdmin(admin.ModelAdmin):
-    list_display = ("id", "course", "title", "price", "limit_type", "limit_value", "video_limit", "updated_at")
+    list_display = (
+        "id",
+        "course",
+        "title",
+        "price",
+        "limit_type",
+        "limit_value",
+        "video_limit",
+    )
     list_filter = ("course", "limit_type")
-    search_fields = ("title", "course__title")
-    ordering = ("id",)
-
-    fields = ("course", "title", "price", "limit_type", "limit_value", "video_limit")
     readonly_fields = ("video_limit",)
+    ordering = ("id",)
 
 
 # =========================
 # COURSE ACCESS
 # =========================
-@admin.action(description="Отключить доступ (is_active=False)")
-def disable_access(modeladmin, request, queryset):
-    queryset.update(is_active=False)
-
-
-@admin.action(description="Включить доступ (is_active=True)")
-def enable_access(modeladmin, request, queryset):
-    queryset.update(is_active=True)
-
-
 @admin.register(CourseAccess)
 class CourseAccessAdmin(admin.ModelAdmin):
     list_display = (
@@ -214,45 +226,30 @@ class CourseAccessAdmin(admin.ModelAdmin):
         "user",
         "course",
         "tariff",
-        "is_active",
         "video_limit",
-        "used_videos",
+        "is_active",
         "created_at",
         "token_short",
     )
-    list_filter = ("is_active", "course", "tariff")
-    search_fields = ("user__username", "user__email", "course__title", "token")
-    ordering = ("-created_at",)
-
-    autocomplete_fields = ("user", "course", "tariff")
+    list_filter = ("is_active", "course")
+    search_fields = ("user__email", "token")
     readonly_fields = ("created_at", "video_limit")
 
-    fieldsets = (
-        ("Основное", {"fields": ("user", "course", "tariff")}),
-        ("Доступ", {"fields": ("token", "is_active")}),
-        ("Лимиты", {"fields": ("video_limit", "used_videos")}),
-        ("Служебное", {"fields": ("created_at",)}),
-    )
-
-    actions = [disable_access, enable_access]
+    autocomplete_fields = ("user", "course", "tariff")
 
     @admin.display(description="Токен")
     def token_short(self, obj):
         if not obj.token:
             return "-"
-        if len(obj.token) <= 12:
-            return obj.token
         return f"{obj.token[:6]}…{obj.token[-4:]}"
 
 
 # =========================
-# LESSON OPEN (read-only)
+# LESSON OPEN (READ ONLY)
 # =========================
 @admin.register(LessonOpen)
 class LessonOpenAdmin(admin.ModelAdmin):
     list_display = ("id", "access", "lesson", "opened_at")
-    list_filter = ("access__course",)
-    search_fields = ("access__user__username", "lesson__title", "access__course__title", "access__token")
     ordering = ("-opened_at",)
     readonly_fields = ("access", "lesson", "opened_at")
 
@@ -264,17 +261,17 @@ class LessonOpenAdmin(admin.ModelAdmin):
 
 
 # =========================
-# HOMEWORK (student submissions)
+# HOMEWORK
 # =========================
 @admin.register(Homework)
 class HomeworkAdmin(admin.ModelAdmin):
-    list_display = ("id", "lesson", "user", "status", "created_at", "updated_at")
+    list_display = ("id", "lesson", "user", "status", "created_at")
     list_filter = ("status", "lesson__course")
-    search_fields = ("lesson__title", "lesson__course__title", "user__username", "user__email", "comment", "content")
+    search_fields = ("lesson__title", "user__email")
     ordering = ("-created_at",)
 
     def get_queryset(self, request):
-        qs = super().get_queryset(request).select_related("lesson", "lesson__course", "user", "lesson__course__instructor")
+        qs = super().get_queryset(request).select_related("lesson", "user")
         if getattr(request.user, "role", "") == "teacher" and not request.user.is_superuser:
             return qs.filter(lesson__course__instructor=request.user)
         return qs
