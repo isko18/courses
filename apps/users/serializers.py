@@ -328,6 +328,8 @@ class TeacherLessonCreateUpdateSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "course",
+            "order",
+
             "title",
             "description",
             "video_duration",
