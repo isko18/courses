@@ -115,7 +115,8 @@ class Course(models.Model):
         verbose_name="Преподаватель",
     )
     description = models.TextField(blank=True, default="", verbose_name="Описание курса")
-
+    is_archived = models.BooleanField(default=False)
+    archived_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
 
@@ -127,6 +128,13 @@ class Course(models.Model):
             models.Index(fields=["instructor"]),
             models.Index(fields=["title"]),
         ]
+
+    def archive(self):
+        if self.is_archived:
+            return
+        self.is_archived = True
+        self.archived_at = timezone.now()
+        self.save(update_fields=["is_archived", "archived_at"])
 
     def __str__(self):
         return self.title
@@ -386,7 +394,7 @@ class Homework(models.Model):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="homeworks", verbose_name="Пользователь")
     content = models.TextField(verbose_name="Ответ / ссылка на ДЗ")
 
-    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="rework", verbose_name="Статус")
+    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="examination", verbose_name="Статус")
     comment = models.TextField(blank=True, null=True, verbose_name="Комментарий преподавателя")
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
