@@ -348,6 +348,10 @@ class CourseAccess(models.Model):
     
     def __str__(self):
         return f"{self.user} → {self.course}"
+    
+    class Meta:
+        verbose_name = "Доступ"
+        verbose_name_plural = "Доступы"
 
 
 class LessonOpen(models.Model):
