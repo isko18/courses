@@ -150,7 +150,7 @@ class CourseListCreateView(generics.ListCreateAPIView):
 
 
 
-class CourseDetailView(generics.RetrieveUpdateAPIView):
+class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = CourseSerializer
     http_method_names = ["get", "patch"]
 
