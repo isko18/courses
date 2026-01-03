@@ -101,10 +101,11 @@ class CategoryListCreateView(generics.ListCreateAPIView):
         return [permissions.AllowAny()]
 
     def get_queryset(self):
-        return Category.objects.annotate(
-            courses_count=Count("courses")
-        ).order_by("id")
-
+        return (
+            Category.objects
+            .annotate(courses_count=Count("courses", filter=Q(courses__is_archived=False)))  # ✅
+            .order_by("id")
+        )
 
 
 class CategoryDetailView(generics.RetrieveUpdateAPIView):
@@ -127,11 +128,14 @@ class CourseListCreateView(generics.ListCreateAPIView):
         return [permissions.AllowAny()]
 
     def get_queryset(self):
-        qs = Course.objects.select_related(
-            "category", "instructor"
-        ).annotate(
-            lessons_count=Count("lessons"),
-            tariffs_count=Count("tariffs"),
+        qs = (
+            Course.objects
+            .select_related("category", "instructor")
+            .filter(is_archived=False)  # ✅ ВАЖНО
+            .annotate(
+                lessons_count=Count("lessons", filter=Q(lessons__is_archived=False)),  # ✅ только неархивные уроки
+                tariffs_count=Count("tariffs"),
+            )
         )
 
         category_id = self.request.query_params.get("category_id")
@@ -143,7 +147,6 @@ class CourseListCreateView(generics.ListCreateAPIView):
             qs = qs.filter(instructor_id=instructor_id)
 
         return qs.order_by("id")
-
 
     def perform_create(self, serializer):
         serializer.save(instructor=self.request.user)
@@ -159,13 +162,14 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
         return [permissions.AllowAny()]
 
     def get_queryset(self):
-        qs = Course.objects.select_related("category", "instructor")
+        qs = Course.objects.select_related("category", "instructor").filter(is_archived=False)  # ✅
         if self.request.method in ("PATCH", "DELETE"):
             qs = qs.filter(instructor=self.request.user)
         return qs
 
     def perform_destroy(self, instance):
-        instance.archive()  # ❗ НЕ delete()
+        instance.archive()
+
 
 
 
@@ -187,7 +191,7 @@ class LessonListPublicView(generics.ListAPIView):
     serializer_class = LessonPublicSerializer
 
     def get_queryset(self):
-        qs = Lesson.objects.select_related("course").filter(is_archived=False)
+        qs = Lesson.objects.select_related("course").filter(is_archived=False, course__is_archived=False)
         course_id = self.request.query_params.get("course_id")
         if course_id:
             qs = qs.filter(course_id=course_id)
