@@ -74,7 +74,7 @@ urlpatterns = [
     path("categories/", CategoryListCreateView.as_view(), name="categories-list-create"),
     path("categories/<int:pk>/", CategoryDetailView.as_view(), name="categories-detail"),
     path("courses/", CourseListCreateView.as_view(), name="courses-list-create"),
-    path("courses/<int:pk>/", CourseDetailView.as_view(), name="courses-detail"),
+    path("teacher/сourses/<int:pk>/", CourseDetailView.as_view(), name="courses-detail"),
     path("tariffs/", TariffListView.as_view(), name="tariffs-list"),
     path("lessons/", LessonListPublicView.as_view(), name="lessons-public-list"),
 

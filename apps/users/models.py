@@ -99,24 +99,21 @@ class Category(models.Model):
 class Course(models.Model):
     photo = models.ImageField(upload_to="course/", verbose_name="Фото Курса", blank=True, null=True)
     title = models.CharField(max_length=255, verbose_name="Название курса")
-    category = models.ForeignKey(
-        Category,
-        on_delete=models.CASCADE,
-        related_name="courses",
-        verbose_name="Категория",
-    )
+    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="courses", verbose_name="Категория")
     instructor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+        null=True, blank=True,
         limit_choices_to={"role": "teacher"},
         related_name="teaching_courses",
         verbose_name="Преподаватель",
     )
     description = models.TextField(blank=True, default="", verbose_name="Описание курса")
-    is_archived = models.BooleanField(default=False)
+
+    # ✅ архив
+    is_archived = models.BooleanField(default=False, db_index=True)
     archived_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
 
@@ -124,8 +121,8 @@ class Course(models.Model):
         verbose_name = "Курс"
         verbose_name_plural = "Курсы"
         indexes = [
-            models.Index(fields=["category"]),
-            models.Index(fields=["instructor"]),
+            models.Index(fields=["category", "is_archived"]),
+            models.Index(fields=["instructor", "is_archived"]),
             models.Index(fields=["title"]),
         ]
 
@@ -136,9 +133,18 @@ class Course(models.Model):
         self.archived_at = timezone.now()
         self.save(update_fields=["is_archived", "archived_at"])
 
-    def __str__(self):
-        return self.title
+        # ✅ (опционально) архивируем уроки курса тоже
+        Lesson.objects.filter(course=self, is_archived=False).update(
+            is_archived=True,
+            archived_at=timezone.now(),
+        )
 
+    def unarchive(self):
+        if not self.is_archived:
+            return
+        self.is_archived = False
+        self.archived_at = None
+        self.save(update_fields=["is_archived", "archived_at"])
 
 # =========================
 # LESSONS (archive + youtube status + homework attach)
