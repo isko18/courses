@@ -25,7 +25,7 @@ FRONTEND_DIST = BASE_DIR / "Frontend" / "dist"
 SECRET_KEY = 'django-insecure-=rmnbupo&qx-l9c()8(z01vc61x=u0k^9)1om4g_1dg)2na264'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 
 ALLOWED_HOSTS = ["*"]
 
@@ -33,6 +33,7 @@ ALLOWED_HOSTS = ["*"]
 # Application definition
 
 INSTALLED_APPS = [
+    "jazzmin",
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
