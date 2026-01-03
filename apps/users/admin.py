@@ -29,6 +29,8 @@ class UserAdmin(DjangoUserAdmin):
     list_display = (
         "id",
         "username",
+        "first_name",
+        "last_name",
         "email",
         "phone",
         "role",
@@ -37,7 +39,7 @@ class UserAdmin(DjangoUserAdmin):
         "is_superuser",
     )
     list_filter = ("role", "is_active", "is_staff", "is_superuser")
-    search_fields = ("username", "email", "phone")
+    search_fields = ("username", "first_name", "last_name", "email", "phone")
     ordering = ("id",)
 
     fieldsets = DjangoUserAdmin.fieldsets + (
