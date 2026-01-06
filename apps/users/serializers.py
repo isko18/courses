@@ -136,6 +136,7 @@ class LessonPublicSerializer(serializers.ModelSerializer):
             "course",
             "course_title",
             "title",
+            "video_url",
             "description",
             "youtube_video_id",
             "video_duration",
