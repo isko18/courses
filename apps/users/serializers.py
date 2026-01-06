@@ -320,27 +320,30 @@ class TeacherLessonSerializer(serializers.ModelSerializer):
 
 class TeacherLessonCreateUpdateSerializer(serializers.ModelSerializer):
     """
-    Редактирование урока (без перезаливки видео).
-    ДЗ редактируется здесь же.
+    Создание/редактирование урока без загрузки файла.
+    Теперь можно вручную указать video_url.
     """
+    video_url = serializers.URLField(required=False, allow_blank=True)
+
     class Meta:
         model = Lesson
         fields = (
             "id",
             "course",
             "order",
-
             "title",
             "description",
             "video_duration",
 
-            # read-only YouTube
+            # ✅ manual
             "video_url",
+
+            # read-only YouTube
             "youtube_video_id",
             "youtube_status",
             "youtube_error",
 
-            # read-only archive
+            # archive (read-only)
             "is_archived",
 
             # ✅ ДЗ
@@ -353,7 +356,6 @@ class TeacherLessonCreateUpdateSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = (
-            "video_url",
             "youtube_video_id",
             "youtube_status",
             "youtube_error",
@@ -362,17 +364,25 @@ class TeacherLessonCreateUpdateSerializer(serializers.ModelSerializer):
             "updated_at",
         )
 
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+
+        # подчистим url
+        if "video_url" in attrs:
+            attrs["video_url"] = (attrs.get("video_url") or "").strip()
+
+        return attrs
+
+
 
 class TeacherLessonUploadSerializer(serializers.Serializer):
-    """
-    Создание урока с загрузкой видео (в YouTube) + опционально задание ДЗ.
-    """
     course = serializers.PrimaryKeyRelatedField(queryset=Course.objects.all())
     title = serializers.CharField(max_length=255)
     description = serializers.CharField(required=False, allow_blank=True)
-    video_file = serializers.FileField(required=True)
 
-    # ✅ ДЗ сразу
+    video_file = serializers.FileField(required=False, allow_null=True)
+    video_url = serializers.URLField(required=False, allow_blank=True)
+
     homework_title = serializers.CharField(required=False, allow_blank=True, max_length=255)
     homework_description = serializers.CharField(required=False, allow_blank=True)
     homework_link = serializers.URLField(required=False, allow_blank=True)
@@ -383,6 +393,25 @@ class TeacherLessonUploadSerializer(serializers.Serializer):
         if course.instructor_id != user.id:
             raise serializers.ValidationError("Нельзя создавать урок в чужом курсе.")
         return course
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+
+        video_file = attrs.get("video_file")
+        video_url = (attrs.get("video_url") or "").strip()
+
+        has_file = bool(video_file)
+        has_url = bool(video_url)
+
+        if has_file and has_url:
+            raise serializers.ValidationError("Укажи либо video_file, либо video_url (только одно).")
+
+        if not has_file and not has_url:
+            raise serializers.ValidationError("Нужно указать video_file или video_url.")
+
+        attrs["video_url"] = video_url
+        return attrs
+
 
 
 # =========================
