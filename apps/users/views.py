@@ -447,9 +447,6 @@ class TeacherLessonUnarchiveView(APIView):
 # TEACHER: CREATE LESSON + UPLOAD VIDEO TO YOUTUBE PROJECT
 # =========================
 class TeacherCreateLessonWithUploadView(APIView):
-    """
-    Учитель загружает файл -> backend заливает в YouTube проекта -> создаём Lesson.
-    """
     permission_classes = [permissions.IsAuthenticated, IsTeacher]
     parser_classes = [MultiPartParser, FormParser]
 
@@ -458,20 +455,46 @@ class TeacherCreateLessonWithUploadView(APIView):
         ser = TeacherLessonUploadSerializer(data=request.data, context={"request": request})
         ser.is_valid(raise_exception=True)
 
-        proj = ProjectYouTubeCredential.objects.first()
-        if not proj:
-            return Response({"detail": "YouTube проекта не подключён."}, status=status.HTTP_400_BAD_REQUEST)
-
         course = ser.validated_data["course"]
         title = ser.validated_data["title"]
         description = ser.validated_data.get("description", "") or ""
-        video_file = ser.validated_data["video_file"]
+
+        video_file = ser.validated_data.get("video_file")
+        video_url = ser.validated_data.get("video_url", "") or ""
 
         # ✅ ДЗ поля
         hw_title = ser.validated_data.get("homework_title", "") or ""
         hw_desc = ser.validated_data.get("homework_description", "") or ""
         hw_link = ser.validated_data.get("homework_link", "") or ""
         hw_file = ser.validated_data.get("homework_file", None)
+
+        # =========================
+        # CASE 1: MANUAL URL
+        # =========================
+        if video_url and not video_file:
+            lesson = Lesson.objects.create(
+                course=course,
+                title=title,
+                description=description,
+
+                video_url=video_url,
+                youtube_video_id="",
+                youtube_status="idle",
+                youtube_error="",
+
+                homework_title=hw_title,
+                homework_description=hw_desc,
+                homework_link=hw_link,
+                homework_file=hw_file,
+            )
+            return Response(TeacherLessonSerializer(lesson).data, status=status.HTTP_201_CREATED)
+
+        # =========================
+        # CASE 2: UPLOAD FILE -> YOUTUBE
+        # =========================
+        proj = ProjectYouTubeCredential.objects.first()
+        if not proj:
+            return Response({"detail": "YouTube проекта не подключён."}, status=status.HTTP_400_BAD_REQUEST)
 
         # 1) создаём урок сразу
         lesson = Lesson.objects.create(
@@ -491,17 +514,14 @@ class TeacherCreateLessonWithUploadView(APIView):
         )
 
         tmp_dir = tempfile.mkdtemp(prefix="yt_upload_")
-        # безопасное имя (на Windows/Unix без сюрпризов)
         safe_name = os.path.basename(getattr(video_file, "name", "video.mp4")) or "video.mp4"
         tmp_path = os.path.join(tmp_dir, safe_name)
 
         try:
-            # 2) пишем файл во временную папку
             with open(tmp_path, "wb") as f:
                 for chunk in video_file.chunks():
                     f.write(chunk)
 
-            # 3) грузим в YouTube
             creds = creds_from_json(proj.credentials_json)
             youtube = build_youtube(creds)
 
@@ -510,11 +530,10 @@ class TeacherCreateLessonWithUploadView(APIView):
                 file_path=tmp_path,
                 title=title,
                 description=description,
-                privacy_status="unlisted",  # ✅ приватно
+                privacy_status="unlisted",
                 category_id="27",
             )
 
-            # 4) сохраняем данные
             lesson.youtube_video_id = video_id
             lesson.video_url = f"https://www.youtube.com/watch?v={video_id}"
             lesson.youtube_status = "processing"
@@ -531,7 +550,6 @@ class TeacherCreateLessonWithUploadView(APIView):
                 {"detail": "Ошибка загрузки в YouTube.", "error": str(e), "lesson_id": lesson.id},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 

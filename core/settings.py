@@ -25,7 +25,7 @@ FRONTEND_DIST = BASE_DIR / "Frontend" / "dist"
 SECRET_KEY = 'django-insecure-=rmnbupo&qx-l9c()8(z01vc61x=u0k^9)1om4g_1dg)2na264'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 
 ALLOWED_HOSTS = ["*"]
 
@@ -200,15 +200,15 @@ CORS_ALLOW_METHODS = (
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-
+OAUTHLIB_INSECURE_TRANSPORT = True
 YOUTUBE_CLIENT_SECRETS_FILE = BASE_DIR / "client_secret.json"
-YOUTUBE_REDIRECT_URI = "https://vostok-massage.kg/api/youtube/project/oauth/callback/"
+YOUTUBE_REDIRECT_URI = "http://127.0.0.1:8000/api/youtube/project/oauth/callback/"
 
 YOUTUBE_SCOPES = [    "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",]
 
 # куда редиректить админа после успеха (опционально)
-YOUTUBE_OAUTH_SUCCESS_REDIRECT = "https://vostok-massage.kg/admin/youtube-connected"
+YOUTUBE_OAUTH_SUCCESS_REDIRECT = "http://127.0.0.1:8000/admin/youtube-connected"
 
 
 SWAGGER_SETTINGS = {
