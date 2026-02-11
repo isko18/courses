@@ -35,6 +35,9 @@ from .views import (
 
     # youtube upload
     TeacherCreateLessonWithUploadView,
+    
+    # video streaming
+    VideoStreamView,
 
     # analytics
     AnalyticsOverviewView,
@@ -109,6 +112,15 @@ urlpatterns = [
         "teacher/lessons/create-with-upload/",
         TeacherCreateLessonWithUploadView.as_view(),
         name="teacher-lesson-upload",
+    ),
+    
+    # =========================
+    # VIDEO STREAMING
+    # =========================
+    path(
+        "lessons/<int:lesson_id>/video/",
+        VideoStreamView.as_view(),
+        name="lesson-video-stream",
     ),
 
     # =========================

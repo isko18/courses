@@ -192,6 +192,15 @@ class Lesson(models.Model):
     video_duration = models.DurationField(null=True, blank=True, verbose_name="Длительность видео")
     description = models.TextField(blank=True, default="", verbose_name="Описание урока")
 
+    # ✅ Локальное видео файл (вместо YouTube)
+    video_file = models.FileField(
+        upload_to="videos/%Y/%m/%d/",
+        blank=True,
+        null=True,
+        verbose_name="Видео файл",
+        help_text="Загруженное видео на сервер (до 20GB)",
+    )
+
     # Archive
     is_archived = models.BooleanField(default=False, verbose_name="В архиве")
     archived_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата архивации")

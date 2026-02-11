@@ -140,6 +140,15 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Настройки для загрузки больших файлов (до 20GB)
+DATA_UPLOAD_MAX_MEMORY_SIZE = 21474836480  # 20GB в байтах
+FILE_UPLOAD_MAX_MEMORY_SIZE = 21474836480  # 20GB в байтах
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
+
+# Настройки для обработки видео
+VIDEO_MAX_SIZE_GB = 20  # Максимальный размер видео файла в GB
+VIDEO_COMPRESSION_ENABLED = True  # Включить сжатие видео
+
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (

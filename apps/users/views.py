@@ -53,6 +53,13 @@ from .serializers import (
     SettingsSeiteSerializer
 )
 from .youtube_service import build_youtube, creds_from_json, upload_video
+from .video_service import optimize_video_for_upload, get_video_info
+from django.conf import settings
+from django.utils import timezone
+from datetime import timedelta
+from django.http import FileResponse, Http404, HttpResponse
+from django.views.decorators.http import etag
+import mimetypes
 
 from django.db.models import Sum, Count
 from apps.users.analytics import (
@@ -307,14 +314,14 @@ class OpenLessonView(APIView):
 
         # если уже открывали — просто отдаём видео
         if LessonOpen.objects.filter(access=access, lesson=lesson).exists():
-            return Response({"lesson": LessonVideoSerializer(lesson).data})
+            return Response({"lesson": LessonVideoSerializer(lesson, context={"request": request}).data})
 
         LessonOpen.objects.get_or_create(access=access, lesson=lesson)
 
 
         on_lesson_open(access, lesson)
 
-        return Response({"lesson": LessonVideoSerializer(lesson).data})
+        return Response({"lesson": LessonVideoSerializer(lesson, context={"request": request}).data})
 
 # =========================
 # STUDENT: HOMEWORK
@@ -487,15 +494,11 @@ class TeacherCreateLessonWithUploadView(APIView):
                 homework_link=hw_link,
                 homework_file=hw_file,
             )
-            return Response(TeacherLessonSerializer(lesson).data, status=status.HTTP_201_CREATED)
+            return Response(TeacherLessonSerializer(lesson, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
         # =========================
-        # CASE 2: UPLOAD FILE -> YOUTUBE
+        # CASE 2: UPLOAD FILE -> SERVER (с оптимизацией)
         # =========================
-        proj = ProjectYouTubeCredential.objects.first()
-        if not proj:
-            return Response({"detail": "YouTube проекта не подключён."}, status=status.HTTP_400_BAD_REQUEST)
-
         # 1) создаём урок сразу
         lesson = Lesson.objects.create(
             course=course,
@@ -513,45 +516,190 @@ class TeacherCreateLessonWithUploadView(APIView):
             homework_file=hw_file,
         )
 
-        tmp_dir = tempfile.mkdtemp(prefix="yt_upload_")
+        tmp_dir = tempfile.mkdtemp(prefix="video_upload_")
         safe_name = os.path.basename(getattr(video_file, "name", "video.mp4")) or "video.mp4"
+        # Убираем небезопасные символы из имени файла
+        safe_name = "".join(c for c in safe_name if c.isalnum() or c in "._-")
+        if not safe_name:
+            safe_name = "video.mp4"
         tmp_path = os.path.join(tmp_dir, safe_name)
 
         try:
+            # Сохраняем загруженный файл во временную директорию
             with open(tmp_path, "wb") as f:
                 for chunk in video_file.chunks():
                     f.write(chunk)
 
-            creds = creds_from_json(proj.credentials_json)
-            youtube = build_youtube(creds)
+            # Проверяем размер файла
+            file_size_gb = os.path.getsize(tmp_path) / (1024 ** 3)
+            max_size_gb = getattr(settings, "VIDEO_MAX_SIZE_GB", 20)
+            
+            if file_size_gb > max_size_gb:
+                lesson.youtube_status = "error"
+                lesson.youtube_error = f"Файл слишком большой ({file_size_gb:.2f}GB). Максимальный размер: {max_size_gb}GB"
+                lesson.save(update_fields=["youtube_status", "youtube_error"])
+                return Response(
+                    {"detail": lesson.youtube_error, "lesson_id": lesson.id},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
-            video_id = upload_video(
-                youtube=youtube,
-                file_path=tmp_path,
-                title=title,
-                description=description,
-                privacy_status="unlisted",
-                category_id="27",
-            )
+            # Оптимизируем видео (сжатие если нужно)
+            optimized_path = os.path.join(tmp_dir, "optimized_" + safe_name)
+            compression_enabled = getattr(settings, "VIDEO_COMPRESSION_ENABLED", True)
+            
+            if compression_enabled:
+                success, final_path, error = optimize_video_for_upload(
+                    tmp_path,
+                    optimized_path,
+                    max_file_size_gb=max_size_gb,
+                )
+                
+                if not success:
+                    lesson.youtube_status = "error"
+                    lesson.youtube_error = error or "Ошибка оптимизации видео"
+                    lesson.save(update_fields=["youtube_status", "youtube_error"])
+                    return Response(
+                        {"detail": lesson.youtube_error, "lesson_id": lesson.id},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                
+                final_video_path = final_path
+            else:
+                final_video_path = tmp_path
 
-            lesson.youtube_video_id = video_id
-            lesson.video_url = f"https://www.youtube.com/watch?v={video_id}"
-            lesson.youtube_status = "processing"
+            # Получаем информацию о видео (длительность)
+            video_info = get_video_info(final_video_path)
+            video_duration = None
+            if video_info and video_info.get("duration"):
+                video_duration = timedelta(seconds=int(video_info["duration"]))
+
+            # Сохраняем файл в MEDIA_ROOT
+            # Генерируем уникальное имя файла
+            from django.utils.text import slugify
+            from django.utils import timezone
+            timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
+            filename_base = slugify(title)[:50] or "video"
+            file_extension = os.path.splitext(safe_name)[1] or ".mp4"
+            final_filename = f"{filename_base}_{timestamp}{file_extension}"
+            
+            # Путь относительно MEDIA_ROOT
+            media_path = os.path.join("videos", timezone.now().strftime("%Y/%m/%d"), final_filename)
+            full_media_path = os.path.join(settings.MEDIA_ROOT, media_path)
+            
+            # Создаём директорию если нужно
+            os.makedirs(os.path.dirname(full_media_path), exist_ok=True)
+            
+            # Копируем файл в финальное место
+            shutil.copy2(final_video_path, full_media_path)
+
+            # Обновляем урок
+            lesson.video_file.name = media_path
+            lesson.video_duration = video_duration
+            lesson.youtube_status = "ready"
             lesson.youtube_error = ""
-            lesson.save(update_fields=["youtube_video_id", "video_url", "youtube_status", "youtube_error"])
+            lesson.save(update_fields=["video_file", "video_duration", "youtube_status", "youtube_error"])
 
-            return Response(TeacherLessonSerializer(lesson).data, status=status.HTTP_201_CREATED)
+            return Response(TeacherLessonSerializer(lesson, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
             lesson.youtube_status = "error"
             lesson.youtube_error = str(e)
             lesson.save(update_fields=["youtube_status", "youtube_error"])
             return Response(
-                {"detail": "Ошибка загрузки в YouTube.", "error": str(e), "lesson_id": lesson.id},
+                {"detail": "Ошибка загрузки видео.", "error": str(e), "lesson_id": lesson.id},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+# =========================
+# VIDEO STREAMING (с поддержкой Range requests для видео)
+# =========================
+class VideoStreamView(APIView):
+    """
+    Потоковая передача видео файлов с поддержкой Range requests.
+    Это необходимо для корректной работы видео плееров (перемотка, пауза).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, lesson_id):
+        """Потоковая передача видео файла урока."""
+        try:
+            lesson = Lesson.objects.select_related("course").get(
+                id=lesson_id,
+                is_archived=False
+            )
+        except Lesson.DoesNotExist:
+            raise Http404("Урок не найден")
+
+        # Проверяем доступ
+        if request.user.role == "student":
+            access = CourseAccess.objects.filter(
+                user=request.user,
+                course=lesson.course,
+                is_active=True
+            ).first()
+            
+            if not access:
+                return Response({"detail": "Нет доступа к этому уроку."}, status=403)
+            
+            if lesson.order > access.video_limit:
+                return Response({"detail": "Тариф не позволяет открыть этот урок."}, status=402)
+        
+        elif request.user.role == "teacher":
+            # Преподаватель может смотреть только свои уроки
+            if lesson.course.instructor_id != request.user.id:
+                return Response({"detail": "Нет доступа к этому уроку."}, status=403)
+        
+        # Проверяем наличие видео файла
+        if not lesson.video_file:
+            return Response({"detail": "Видео файл не найден."}, status=404)
+        
+        video_path = lesson.video_file.path
+        
+        if not os.path.exists(video_path):
+            return Response({"detail": "Видео файл не существует на сервере."}, status=404)
+        
+        # Определяем MIME тип
+        content_type, _ = mimetypes.guess_type(video_path)
+        if not content_type:
+            content_type = "video/mp4"
+        
+        # Поддержка Range requests для потоковой передачи
+        file_size = os.path.getsize(video_path)
+        range_header = request.META.get("HTTP_RANGE", "").strip()
+        
+        if range_header:
+            # Парсим Range заголовок
+            range_match = range_header.replace("bytes=", "").split("-")
+            start = int(range_match[0]) if range_match[0] else 0
+            end = int(range_match[1]) if len(range_match) > 1 and range_match[1] else file_size - 1
+            
+            # Открываем файл и читаем нужный диапазон
+            with open(video_path, "rb") as f:
+                f.seek(start)
+                content = f.read(end - start + 1)
+            
+            response = HttpResponse(content, status=206)  # 206 Partial Content
+            response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+            response["Accept-Ranges"] = "bytes"
+            response["Content-Length"] = len(content)
+        else:
+            # Полная передача файла
+            response = FileResponse(
+                open(video_path, "rb"),
+                content_type=content_type
+            )
+            response["Content-Length"] = file_size
+            response["Accept-Ranges"] = "bytes"
+        
+        response["Content-Type"] = content_type
+        response["Cache-Control"] = "public, max-age=3600"
+        
+        return response
 
 
 # =========================

@@ -208,12 +208,25 @@ class LessonVideoSerializer(serializers.ModelSerializer):
     """
     Видео отдаём только после OpenLessonView (когда урок открыт или уже был открыт).
     """
+    video_file_url = serializers.SerializerMethodField()
+    
+    def get_video_file_url(self, obj):
+        """Возвращает URL для потоковой передачи видео файла, если он есть."""
+        if obj.video_file:
+            request = self.context.get('request')
+            if request:
+                # Используем endpoint для потоковой передачи вместо прямого URL
+                return request.build_absolute_uri(f"/api/lessons/{obj.id}/video/")
+            return f"/api/lessons/{obj.id}/video/"
+        return None
+    
     class Meta:
         model = Lesson
         fields = (
             "id",
             "title",
             "video_url",
+            "video_file_url",
             "youtube_video_id",
             "youtube_status",
             "description",
@@ -295,6 +308,18 @@ class HomeworkUpdateSerializer(serializers.ModelSerializer):
 # TEACHER: LESSONS + ARCHIVE + UPLOAD + HOMEWORK TASK
 # =========================
 class TeacherLessonSerializer(serializers.ModelSerializer):
+    video_file_url = serializers.SerializerMethodField()
+    
+    def get_video_file_url(self, obj):
+        """Возвращает URL для потоковой передачи видео файла, если он есть."""
+        if obj.video_file:
+            request = self.context.get('request')
+            if request:
+                # Используем endpoint для потоковой передачи вместо прямого URL
+                return request.build_absolute_uri(f"/api/lessons/{obj.id}/video/")
+            return f"/api/lessons/{obj.id}/video/"
+        return None
+    
     class Meta:
         model = Lesson
         fields = (
@@ -304,9 +329,11 @@ class TeacherLessonSerializer(serializers.ModelSerializer):
             "order",
             "description",
             "video_url",
+            "video_file_url",
             "youtube_video_id",
             "youtube_status",
             "youtube_error",
+            "video_duration",
             "is_archived",
             "homework_title",
             "homework_description",
