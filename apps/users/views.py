@@ -636,7 +636,10 @@ class VideoStreamView(APIView):
             raise Http404("Урок не найден")
 
         # Проверяем доступ
-        if request.user.role == "student":
+        # Админы (staff/superuser) имеют доступ ко всем видео
+        if request.user.is_staff or request.user.is_superuser:
+            pass  # Админы могут смотреть все видео
+        elif request.user.role == "student":
             access = CourseAccess.objects.filter(
                 user=request.user,
                 course=lesson.course,
@@ -653,6 +656,8 @@ class VideoStreamView(APIView):
             # Преподаватель может смотреть только свои уроки
             if lesson.course.instructor_id != request.user.id:
                 return Response({"detail": "Нет доступа к этому уроку."}, status=403)
+        else:
+            return Response({"detail": "Нет доступа к этому уроку."}, status=403)
         
         # Проверяем наличие видео файла
         if not lesson.video_file:

@@ -2,6 +2,8 @@ from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.db.models import Count, Q
 from django.utils import timezone
+from django.utils.html import format_html
+from django.urls import reverse
 
 from .models import (
     User,
@@ -81,11 +83,16 @@ class LessonInline(admin.TabularInline):
         "order",
         "title",
         "youtube_status",
+        "has_video_file",
         "is_archived",
     )
 
     ordering = ("order",)
-    readonly_fields = ("youtube_status",)
+    readonly_fields = ("youtube_status", "has_video_file")
+    
+    @admin.display(description="Видео файл", boolean=True)
+    def has_video_file(self, obj):
+        return bool(obj.video_file)
 
 
 # =========================
@@ -128,6 +135,27 @@ class CourseAdmin(admin.ModelAdmin):
 
 
 # =========================
+# LESSON FILTERS
+# =========================
+class HasVideoFileFilter(admin.SimpleListFilter):
+    title = "Наличие видео файла"
+    parameter_name = "has_video_file"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("yes", "Есть видео файл"),
+            ("no", "Нет видео файла"),
+        )
+
+    def queryset(self, request, queryset):
+        if self.value() == "yes":
+            return queryset.exclude(video_file="").exclude(video_file__isnull=True)
+        elif self.value() == "no":
+            return queryset.filter(Q(video_file="") | Q(video_file__isnull=True))
+        return queryset
+
+
+# =========================
 # LESSON ACTIONS
 # =========================
 @admin.action(description="Архивировать")
@@ -158,10 +186,11 @@ class LessonAdmin(admin.ModelAdmin):
         "order",
         "title",
         "course",
+        "video_file_link",
         "youtube_status",
         "is_archived",
     )
-    list_filter = ("course", "youtube_status", "is_archived")
+    list_filter = ("course", "youtube_status", "is_archived", HasVideoFileFilter)
     search_fields = ("title", "course__title")
     ordering = ("course", "order")
 
@@ -175,20 +204,34 @@ class LessonAdmin(admin.ModelAdmin):
         "youtube_video_id",
         "video_url",
         "youtube_error",
+        "video_file_preview",
+        "video_file_info",
     )
 
     fieldsets = (
         ("Основное", {
             "fields": ("course", "order", "title", "description", "video_duration")
         }),
-        ("YouTube", {
-            "fields": ("video_url", "youtube_video_id", "youtube_status", "youtube_error")
+        ("Видео", {
+            "fields": (
+                "video_file",
+                "video_file_preview",
+                "video_file_info",
+                "video_url",
+                "youtube_video_id",
+                "youtube_status",
+                "youtube_error"
+            )
         }),
         ("Домашнее задание", {
             "fields": ("homework_title", "homework_description", "homework_link", "homework_file")
         }),
         ("Архив", {
             "fields": ("is_archived", "archived_at", "archived_by")
+        }),
+        ("Системная информация", {
+            "fields": ("created_at", "updated_at"),
+            "classes": ("collapse",)
         }),
     )
 
@@ -197,6 +240,88 @@ class LessonAdmin(admin.ModelAdmin):
         if getattr(request.user, "role", "") == "teacher" and not request.user.is_superuser:
             return qs.filter(course__instructor=request.user)
         return qs
+
+    @admin.display(description="Видео файл", ordering="video_file")
+    def video_file_link(self, obj):
+        """Отображает ссылку на видео файл в списке уроков."""
+        if obj.video_file:
+            file_size = ""
+            try:
+                if obj.video_file.storage.exists(obj.video_file.name):
+                    size = obj.video_file.size
+                    if size:
+                        if size < 1024:
+                            file_size = f" ({size} B)"
+                        elif size < 1024 * 1024:
+                            file_size = f" ({size / 1024:.1f} KB)"
+                        elif size < 1024 * 1024 * 1024:
+                            file_size = f" ({size / (1024 * 1024):.1f} MB)"
+                        else:
+                            file_size = f" ({size / (1024 * 1024 * 1024):.2f} GB)"
+            except:
+                pass
+            
+            video_url = reverse('admin:users_lesson_change', args=[obj.pk])
+            return format_html(
+                '<a href="{}" style="color: #417690;">📹 Видео{}</a> | '
+                '<a href="/api/lessons/{}/video/" target="_blank" style="color: #ba2121;">▶ Просмотр</a>',
+                video_url,
+                file_size,
+                obj.pk
+            )
+        return format_html('<span style="color: #999;">—</span>')
+
+    @admin.display(description="Превью видео")
+    def video_file_preview(self, obj):
+        """Отображает видео плеер в админке."""
+        if obj.video_file:
+            video_url = f"/api/lessons/{obj.pk}/video/"
+            return format_html(
+                '<div style="margin: 10px 0;">'
+                '<video controls width="100%" style="max-width: 800px; max-height: 450px;">'
+                '<source src="{}" type="video/mp4">'
+                'Ваш браузер не поддерживает видео.'
+                '</video>'
+                '<br><small>Для просмотра видео в админке требуется авторизация. '
+                'Используйте кнопку "Просмотр" для открытия в новой вкладке.</small>'
+                '</div>',
+                video_url
+            )
+        return format_html('<p style="color: #999;">Видео файл не загружен</p>')
+
+    @admin.display(description="Информация о видео")
+    def video_file_info(self, obj):
+        """Отображает информацию о видео файле."""
+        if obj.video_file:
+            info = []
+            try:
+                if obj.video_file.storage.exists(obj.video_file.name):
+                    size = obj.video_file.size
+                    if size:
+                        if size < 1024:
+                            info.append(f"Размер: {size} B")
+                        elif size < 1024 * 1024:
+                            info.append(f"Размер: {size / 1024:.1f} KB")
+                        elif size < 1024 * 1024 * 1024:
+                            info.append(f"Размер: {size / (1024 * 1024):.1f} MB")
+                        else:
+                            info.append(f"Размер: {size / (1024 * 1024 * 1024):.2f} GB")
+            except Exception as e:
+                info.append(f"Ошибка получения размера: {e}")
+            
+            info.append(f"Путь: {obj.video_file.name}")
+            
+            if obj.video_duration:
+                info.append(f"Длительность: {obj.video_duration}")
+            
+            return format_html(
+                '<div style="background: #f8f9fa; padding: 10px; border-radius: 4px;">'
+                '<strong>📁 Информация о файле:</strong><br>'
+                '{}'
+                '</div>',
+                '<br>'.join(info)
+            )
+        return format_html('<p style="color: #999;">—</p>')
 
 
 # =========================
