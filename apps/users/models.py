@@ -7,24 +7,52 @@ from django.utils import timezone
 from django.contrib.auth.models import AbstractUser
 from django.utils.text import slugify
 
+
 # =========================
-# USERS
+# SETTINGS SITE
 # =========================
 class SettingsSite(models.Model):
-    logo = models.ImageField(upload_to="logo/", verbose_name="Логотип", blank=True, null=True)
-    title = models.CharField(max_length=255, verbose_name="Заголовок", blank=True, null=True)
-    description = models.TextField(verbose_name="Описание", blank=True, null=True)
-    banner = models.ImageField(upload_to="banner/", verbose_name="Фото для баннера", blank=True, null=True)
-    whatsapp_number = models.CharField(max_length=100, verbose_name="Номер whatsapp", blank=True, null=True)
-
-    def __str__(self):
-        return str(self.title)
+    logo = models.ImageField(
+        upload_to="logo/",
+        verbose_name="Логотип",
+        blank=True,
+        null=True,
+    )
+    title = models.CharField(
+        max_length=255,
+        verbose_name="Заголовок",
+        blank=True,
+        null=True,
+    )
+    description = models.TextField(
+        verbose_name="Описание",
+        blank=True,
+        null=True,
+    )
+    banner = models.ImageField(
+        upload_to="banner/",
+        verbose_name="Фото для баннера",
+        blank=True,
+        null=True,
+    )
+    whatsapp_number = models.CharField(
+        max_length=100,
+        verbose_name="Номер WhatsApp",
+        blank=True,
+        null=True,
+    )
 
     class Meta:
         verbose_name = "Основные настройки сайта"
         verbose_name_plural = "Основные настройки сайта"
 
+    def __str__(self):
+        return str(self.title or "Настройки сайта")
 
+
+# =========================
+# USERS
+# =========================
 class User(AbstractUser):
     ROLE_CHOICES = [
         ("student", "Student"),
@@ -32,9 +60,13 @@ class User(AbstractUser):
         ("admin", "Admin"),
     ]
 
-    email = models.EmailField("Email", unique=True)  # ✅ важно
-    phone = models.CharField(max_length=255, verbose_name="Номер телефона", blank=True, default="")
-
+    email = models.EmailField("Email", unique=True)
+    phone = models.CharField(
+        max_length=255,
+        verbose_name="Номер телефона",
+        blank=True,
+        default="",
+    )
     role = models.CharField(
         max_length=10,
         choices=ROLE_CHOICES,
@@ -42,11 +74,14 @@ class User(AbstractUser):
         verbose_name="Роль",
     )
 
-    USERNAME_FIELD = "email"        
-    REQUIRED_FIELDS = ["username"]      
+    USERNAME_FIELD = "email"
+    REQUIRED_FIELDS = ["username"]
+
+    class Meta:
+        verbose_name = "Пользователь"
+        verbose_name_plural = "Пользователи"
 
     def save(self, *args, **kwargs):
-        # если username пуст — сгенерим (чтобы Django не падал)
         if not self.username:
             base = (self.email or "user").split("@")[0]
             base = slugify(base) or "user"
@@ -54,7 +89,7 @@ class User(AbstractUser):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return self.email or self.username
+        return self.email or self.username or f"User #{self.pk}"
 
 
 # =========================
@@ -66,7 +101,12 @@ class ProjectYouTubeCredential(models.Model):
     Подключается 1 раз админом, дальше преподы грузят без входа в YouTube.
     """
     credentials_json = models.TextField(verbose_name="OAuth credentials (JSON)")
-    channel_id = models.CharField(max_length=64, blank=True, default="", verbose_name="Channel ID")
+    channel_id = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        verbose_name="Channel ID",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
@@ -83,9 +123,18 @@ class ProjectYouTubeCredential(models.Model):
 # CATALOG
 # =========================
 class Category(models.Model):
-    photo = models.ImageField(upload_to="category/", verbose_name="Фото категории", blank=True, null=True)
+    photo = models.ImageField(
+        upload_to="category/",
+        verbose_name="Фото категории",
+        blank=True,
+        null=True,
+    )
     name = models.CharField(max_length=255, verbose_name="Название категории")
-    description = models.TextField(blank=True, default="", verbose_name="Описание категории")
+    description = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Описание категории",
+    )
 
     class Meta:
         verbose_name = "Категория"
@@ -97,22 +146,44 @@ class Category(models.Model):
 
 
 class Course(models.Model):
-    photo = models.ImageField(upload_to="course/", verbose_name="Фото Курса", blank=True, null=True)
+    photo = models.ImageField(
+        upload_to="course/",
+        verbose_name="Фото курса",
+        blank=True,
+        null=True,
+    )
     title = models.CharField(max_length=255, verbose_name="Название курса")
-    category = models.ForeignKey(Category, on_delete=models.CASCADE, related_name="courses", verbose_name="Категория")
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.CASCADE,
+        related_name="courses",
+        verbose_name="Категория",
+    )
     instructor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
-        null=True, blank=True,
+        null=True,
+        blank=True,
         limit_choices_to={"role": "teacher"},
         related_name="teaching_courses",
         verbose_name="Преподаватель",
     )
-    description = models.TextField(blank=True, default="", verbose_name="Описание курса")
+    description = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Описание курса",
+    )
 
-    # ✅ архив
-    is_archived = models.BooleanField(default=False, db_index=True)
-    archived_at = models.DateTimeField(null=True, blank=True)
+    is_archived = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name="В архиве",
+    )
+    archived_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Дата архивации",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
@@ -126,6 +197,9 @@ class Course(models.Model):
             models.Index(fields=["title"]),
         ]
 
+    def __str__(self):
+        return self.title
+
     def archive(self):
         if self.is_archived:
             return
@@ -133,7 +207,6 @@ class Course(models.Model):
         self.archived_at = timezone.now()
         self.save(update_fields=["is_archived", "archived_at"])
 
-        # ✅ (опционально) архивируем уроки курса тоже
         Lesson.objects.filter(course=self, is_archived=False).update(
             is_archived=True,
             archived_at=timezone.now(),
@@ -145,6 +218,7 @@ class Course(models.Model):
         self.is_archived = False
         self.archived_at = None
         self.save(update_fields=["is_archived", "archived_at"])
+
 
 # =========================
 # LESSONS (archive + youtube status + homework attach)
@@ -168,11 +242,16 @@ class Lesson(models.Model):
     order = models.PositiveIntegerField(
         default=0,
         verbose_name="Порядок урока",
-        help_text="Чем меньше — тем раньше урок"
+        help_text="Чем меньше — тем раньше урок",
     )
-    # YouTube URL
+
     video_url = models.URLField(blank=True, default="", verbose_name="Ссылка на видео")
-    youtube_video_id = models.CharField(max_length=32, blank=True, default="", verbose_name="YouTube videoId")
+    youtube_video_id = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        verbose_name="YouTube videoId",
+    )
 
     youtube_status = models.CharField(
         max_length=12,
@@ -180,21 +259,37 @@ class Lesson(models.Model):
         default="idle",
         verbose_name="Статус YouTube",
     )
-    youtube_error = models.TextField(blank=True, default="", verbose_name="Ошибка YouTube")
-
-    # ✅ чтобы корректно работать с "YouTube не видит видео первые минуты"
+    youtube_error = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Ошибка YouTube",
+    )
     youtube_uploaded_at = models.DateTimeField(
         null=True,
         blank=True,
         verbose_name="YouTube: время загрузки",
     )
 
-    video_duration = models.DurationField(null=True, blank=True, verbose_name="Длительность видео")
-    description = models.TextField(blank=True, default="", verbose_name="Описание урока")
+    video_duration = models.DurationField(
+        null=True,
+        blank=True,
+        verbose_name="Длительность видео",
+    )
+    description = models.TextField(
+        blank=True,
+        default="",
+        verbose_name="Описание урока",
+    )
 
-    # Archive
-    is_archived = models.BooleanField(default=False, verbose_name="В архиве")
-    archived_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата архивации")
+    is_archived = models.BooleanField(
+        default=False,
+        verbose_name="В архиве",
+    )
+    archived_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Дата архивации",
+    )
     archived_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -204,7 +299,6 @@ class Lesson(models.Model):
         verbose_name="Кто архивировал",
     )
 
-    # ✅ ДЗ прикрепляет преподаватель К УРОКУ
     homework_title = models.CharField(
         max_length=255,
         blank=True,
@@ -243,9 +337,11 @@ class Lesson(models.Model):
             models.Index(fields=["title"]),
             models.Index(fields=["created_at"]),
         ]
-        ordering = ["order","id"]
+        ordering = ["order", "id"]
 
     def __str__(self):
+        if self.course_id:
+            return f"{self.course.title} — {self.title}"
         return self.title
 
     def archive(self, by_user=None):
@@ -275,13 +371,34 @@ class Tariff(models.Model):
         ("all", "Все видео курса"),
     ]
 
-    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="tariffs", verbose_name="Курс")
+    course = models.ForeignKey(
+        Course,
+        on_delete=models.CASCADE,
+        related_name="tariffs",
+        verbose_name="Курс",
+    )
     title = models.CharField(max_length=255, verbose_name="Название тарифа")
-    price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Цена")
+    price = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name="Цена",
+    )
 
-    limit_type = models.CharField(max_length=10, choices=LIMIT_TYPE_CHOICES, default="count", verbose_name="Тип лимита")
-    limit_value = models.PositiveIntegerField(default=0, verbose_name="Значение лимита")
-    video_limit = models.PositiveIntegerField(default=0, editable=False, verbose_name="Итоговый лимит")
+    limit_type = models.CharField(
+        max_length=10,
+        choices=LIMIT_TYPE_CHOICES,
+        default="count",
+        verbose_name="Тип лимита",
+    )
+    limit_value = models.PositiveIntegerField(
+        default=0,
+        verbose_name="Значение лимита",
+    )
+    video_limit = models.PositiveIntegerField(
+        default=0,
+        editable=False,
+        verbose_name="Итоговый лимит",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
@@ -289,10 +406,14 @@ class Tariff(models.Model):
     class Meta:
         verbose_name = "Тариф"
         verbose_name_plural = "Тарифы"
-        indexes = [models.Index(fields=["course"]), models.Index(fields=["limit_type"])]
+        indexes = [
+            models.Index(fields=["course"]),
+            models.Index(fields=["limit_type"]),
+        ]
 
     def __str__(self):
-        return f"{self.course.title} — {self.title}"
+        course_title = getattr(self.course, "title", "")
+        return f"{course_title} — {self.title}"
 
     def clean(self):
         super().clean()
@@ -330,22 +451,61 @@ class Tariff(models.Model):
 
 
 # =========================
-# ACCESS / PURCHASE (FOREVER)
+# ACCESS / PURCHASE
 # =========================
 class CourseAccess(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="course_accesses", blank=True, null=True)
-    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="accesses")
-    tariff = models.ForeignKey(Tariff, on_delete=models.PROTECT)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="course_accesses",
+        blank=True,
+        null=True,
+        verbose_name="Пользователь",
+    )
+    course = models.ForeignKey(
+        Course,
+        on_delete=models.CASCADE,
+        related_name="accesses",
+        verbose_name="Курс",
+    )
+    tariff = models.ForeignKey(
+        Tariff,
+        on_delete=models.PROTECT,
+        verbose_name="Тариф",
+    )
 
-    token = models.CharField(max_length=64, unique=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    is_active = models.BooleanField(default=True)
+    token = models.CharField(
+        max_length=64,
+        unique=True,
+        blank=True,
+        verbose_name="Токен",
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Создано",
+    )
+    is_active = models.BooleanField(default=True, verbose_name="Активен")
 
-    # ✅ СКОЛЬКО УРОКОВ РАЗРЕШЕНО
-    video_limit = models.PositiveIntegerField(editable=False)
+    video_limit = models.PositiveIntegerField(
+        editable=False,
+        verbose_name="Лимит уроков",
+    )
 
     class Meta:
-        unique_together = ("user", "course")
+        verbose_name = "Доступ к курсу"
+        verbose_name_plural = "Доступы к курсам"
+        constraints = [
+            models.UniqueConstraint(fields=["user", "course"], name="uniq_access_user_course"),
+        ]
+        indexes = [
+            models.Index(fields=["user"]),
+            models.Index(fields=["course"]),
+            models.Index(fields=["created_at"]),
+        ]
+
+    def __str__(self):
+        user_label = str(self.user) if self.user_id else "Без пользователя"
+        return f"{user_label} → {self.course}"
 
     def save(self, *args, **kwargs):
         if not self.token:
@@ -353,25 +513,31 @@ class CourseAccess(models.Model):
         self.video_limit = self.tariff.video_limit
         super().save(*args, **kwargs)
 
-    def can_open_lesson(self, lesson: Lesson) -> bool:
+    def can_open_lesson(self, lesson: "Lesson") -> bool:
         if lesson.course_id != self.course_id:
             return False
         if lesson.is_archived:
             return False
         return lesson.order <= self.video_limit
-    
-    def __str__(self):
-        return f"{self.user} → {self.course}"
-    
-    class Meta:
-        verbose_name = "Доступ"
-        verbose_name_plural = "Доступы"
 
 
 class LessonOpen(models.Model):
-    access = models.ForeignKey(CourseAccess, on_delete=models.CASCADE, related_name="opened_lessons")
-    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="opens")
-    opened_at = models.DateTimeField(auto_now_add=True)
+    access = models.ForeignKey(
+        CourseAccess,
+        on_delete=models.CASCADE,
+        related_name="opened_lessons",
+        verbose_name="Доступ",
+    )
+    lesson = models.ForeignKey(
+        Lesson,
+        on_delete=models.CASCADE,
+        related_name="opens",
+        verbose_name="Урок",
+    )
+    opened_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Открыт",
+    )
 
     class Meta:
         verbose_name = "Открытый урок"
@@ -379,10 +545,14 @@ class LessonOpen(models.Model):
         constraints = [
             models.UniqueConstraint(fields=["access", "lesson"], name="uniq_open_access_lesson"),
         ]
-        indexes = [models.Index(fields=["access"]), models.Index(fields=["lesson"])]
+        indexes = [
+            models.Index(fields=["access"]),
+            models.Index(fields=["lesson"]),
+            models.Index(fields=["opened_at"]),
+        ]
 
     def __str__(self):
-        return f"{self.access} opened {self.lesson}"
+        return f"{self.access} открыл {self.lesson}"
 
 
 # =========================
@@ -396,12 +566,31 @@ class Homework(models.Model):
         ("declined", "Отклонено"),
     ]
 
-    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name="homeworks", verbose_name="Урок")
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="homeworks", verbose_name="Пользователь")
+    lesson = models.ForeignKey(
+        Lesson,
+        on_delete=models.CASCADE,
+        related_name="homeworks",
+        verbose_name="Урок",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="homeworks",
+        verbose_name="Пользователь",
+    )
     content = models.TextField(verbose_name="Ответ / ссылка на ДЗ")
 
-    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default="examination", verbose_name="Статус")
-    comment = models.TextField(blank=True, null=True, verbose_name="Комментарий преподавателя")
+    status = models.CharField(
+        max_length=15,
+        choices=STATUS_CHOICES,
+        default="examination",
+        verbose_name="Статус",
+    )
+    comment = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name="Комментарий преподавателя",
+    )
 
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="Создано")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
@@ -414,41 +603,80 @@ class Homework(models.Model):
             models.Index(fields=["status"]),
             models.Index(fields=["created_at"]),
         ]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "lesson"], name="uniq_homework_user_lesson"),
+        ]
 
     def __str__(self):
-        return f"ДЗ: {self.user} — {self.lesson.title}"
+        return f"ДЗ: {self.user} — {self.lesson}"
 
 
+# =========================
+# ANALYTICS
+# =========================
 class CourseDailyAnalytics(models.Model):
-    date = models.DateField(db_index=True)
-    course = models.ForeignKey(Course, on_delete=models.CASCADE)
+    date = models.DateField(db_index=True, verbose_name="Дата")
+    course = models.ForeignKey(
+        Course,
+        on_delete=models.CASCADE,
+        verbose_name="Курс",
+        related_name="daily_analytics",
+    )
 
-    purchases = models.PositiveIntegerField(default=0)
-    revenue = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    purchases = models.PositiveIntegerField(default=0, verbose_name="Покупки")
+    revenue = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        verbose_name="Выручка",
+    )
 
-    opened_lessons = models.PositiveIntegerField(default=0)
-    unique_students = models.PositiveIntegerField(default=0)
+    opened_lessons = models.PositiveIntegerField(default=0, verbose_name="Открытые уроки")
+    unique_students = models.PositiveIntegerField(default=0, verbose_name="Уникальные студенты")
 
-    homeworks_submitted = models.PositiveIntegerField(default=0)
-    homeworks_accepted = models.PositiveIntegerField(default=0)
+    homeworks_submitted = models.PositiveIntegerField(default=0, verbose_name="ДЗ отправлено")
+    homeworks_accepted = models.PositiveIntegerField(default=0, verbose_name="ДЗ принято")
 
     class Meta:
-        unique_together = ("date", "course")
+        verbose_name = "Дневная аналитика курса"
+        verbose_name_plural = "Дневная аналитика курсов"
+        constraints = [
+            models.UniqueConstraint(fields=["date", "course"], name="uniq_daily_date_course"),
+        ]
         indexes = [models.Index(fields=["date", "course"])]
+        ordering = ["-date"]
 
+    def __str__(self):
+        return f"{self.course} — {self.date:%d.%m.%Y}"
 
 
 class CourseAnalytics(models.Model):
-    course = models.OneToOneField(Course, on_delete=models.CASCADE)
+    course = models.OneToOneField(
+        Course,
+        on_delete=models.CASCADE,
+        verbose_name="Курс",
+        related_name="analytics",
+    )
 
-    total_purchases = models.PositiveIntegerField(default=0)
-    total_revenue = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total_purchases = models.PositiveIntegerField(default=0, verbose_name="Всего покупок")
+    total_revenue = models.DecimalField(
+        max_digits=14,
+        decimal_places=2,
+        default=0,
+        verbose_name="Общая выручка",
+    )
 
-    total_students = models.PositiveIntegerField(default=0)
+    total_students = models.PositiveIntegerField(default=0, verbose_name="Всего студентов")
 
-    total_lessons = models.PositiveIntegerField(default=0)
-    total_opens = models.PositiveIntegerField(default=0)
+    total_lessons = models.PositiveIntegerField(default=0, verbose_name="Всего уроков")
+    total_opens = models.PositiveIntegerField(default=0, verbose_name="Всего открытий")
 
-    completion_rate = models.FloatField(default=0)
+    completion_rate = models.FloatField(default=0, verbose_name="Процент прохождения")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="Обновлено")
 
-    updated_at = models.DateTimeField(auto_now=True)
+    class Meta:
+        verbose_name = "Аналитика курса"
+        verbose_name_plural = "Аналитика курсов"
+
+    def __str__(self):
+        return f"Аналитика: {self.course}"
