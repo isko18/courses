@@ -630,11 +630,48 @@ class VideoStreamView(APIView):
     """
     Потоковая передача видео файлов с поддержкой Range requests.
     Это необходимо для корректной работы видео плееров (перемотка, пауза).
+    
+    Поддерживает два способа авторизации:
+    1. Authorization header (Bearer token) - для API запросов
+    2. Query параметр ?token=xxx - для прямого использования в <video src>
     """
-    permission_classes = [permissions.IsAuthenticated]
+    # Убираем обязательную авторизацию, проверяем вручную
+    permission_classes = []
 
     def get(self, request, lesson_id):
         """Потоковая передача видео файла урока."""
+        # Проверяем авторизацию: либо через header, либо через query параметр
+        user = None
+        token = None
+        
+        # Способ 1: Authorization header
+        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+        if auth_header.startswith('Bearer '):
+            from rest_framework_simplejwt.tokens import AccessToken
+            from rest_framework_simplejwt.exceptions import InvalidToken
+            try:
+                token_str = auth_header.split(' ')[1]
+                token = AccessToken(token_str)
+                user = token.user
+            except (InvalidToken, IndexError, AttributeError):
+                pass
+        
+        # Способ 2: Query параметр token
+        if not user:
+            token_param = request.GET.get('token')
+            if token_param:
+                from rest_framework_simplejwt.tokens import AccessToken
+                from rest_framework_simplejwt.exceptions import InvalidToken
+                try:
+                    token = AccessToken(token_param)
+                    user = token.user
+                except (InvalidToken, AttributeError):
+                    return Response({"detail": "Неверный токен."}, status=401)
+        
+        # Если нет авторизации - возвращаем 401
+        if not user:
+            return Response({"detail": "Требуется авторизация."}, status=401)
+        
         try:
             lesson = Lesson.objects.select_related("course").get(
                 id=lesson_id,
@@ -645,11 +682,11 @@ class VideoStreamView(APIView):
 
         # Проверяем доступ
         # Админы (staff/superuser) имеют доступ ко всем видео
-        if request.user.is_staff or request.user.is_superuser:
+        if user.is_staff or user.is_superuser:
             pass  # Админы могут смотреть все видео
-        elif request.user.role == "student":
+        elif user.role == "student":
             access = CourseAccess.objects.filter(
-                user=request.user,
+                user=user,
                 course=lesson.course,
                 is_active=True
             ).first()
@@ -660,9 +697,9 @@ class VideoStreamView(APIView):
             if lesson.order > access.video_limit:
                 return Response({"detail": "Тариф не позволяет открыть этот урок."}, status=402)
         
-        elif request.user.role == "teacher":
+        elif user.role == "teacher":
             # Преподаватель может смотреть только свои уроки
-            if lesson.course.instructor_id != request.user.id:
+            if lesson.course.instructor_id != user.id:
                 return Response({"detail": "Нет доступа к этому уроку."}, status=403)
         else:
             return Response({"detail": "Нет доступа к этому уроку."}, status=403)

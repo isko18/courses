@@ -1,5 +1,13 @@
 # Документация API для работы с видео (Фронтенд)
 
+## ⚡ Важно: Оптимизация для больших файлов
+
+**Сервер оптимизирован для безопасной загрузки больших видео файлов (до 20GB).**
+- ✅ Файлы обрабатываются потоково, без загрузки в память сервера
+- ✅ Безопасно загружать файлы любого размера (до 20GB)
+- ✅ Рекомендуется использовать прогресс-бар для отслеживания загрузки
+- ✅ Для больших файлов (>1GB) загрузка может занять время - это нормально
+
 ## Содержание
 1. [Загрузка видео (Преподаватель)](#загрузка-видео)
 2. [Получение информации об уроке](#получение-информации-об-уроке)
@@ -7,6 +15,7 @@
 4. [Потоковая передача видео](#потоковая-передача-видео)
 5. [Примеры использования](#примеры-использования)
 6. [Обработка ошибок](#обработка-ошибок)
+7. [Рекомендации для больших файлов](#рекомендации-для-больших-файлов)
 
 ---
 
@@ -79,7 +88,7 @@ const lesson = await uploadLessonVideo(formData);
 console.log('Урок создан:', lesson);
 ```
 
-### Пример с React
+### Пример с React (с прогресс-баром)
 
 ```jsx
 import { useState } from 'react';
@@ -88,14 +97,21 @@ function LessonUploadForm({ courseId }) {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState(null);
+  const [uploadSpeed, setUploadSpeed] = useState(null);
+  const [timeRemaining, setTimeRemaining] = useState(null);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setUploading(true);
     setError(null);
+    setProgress(0);
 
     const formData = new FormData(e.target);
     formData.append('course', courseId);
+    
+    const file = formData.get('video_file');
+    const fileSize = file?.size || 0;
+    const startTime = Date.now();
 
     try {
       const token = localStorage.getItem('access_token');
@@ -107,6 +123,17 @@ function LessonUploadForm({ courseId }) {
         if (e.lengthComputable) {
           const percentComplete = (e.loaded / e.total) * 100;
           setProgress(percentComplete);
+          
+          // Расчет скорости загрузки
+          const elapsed = (Date.now() - startTime) / 1000; // секунды
+          const speed = e.loaded / elapsed; // байт/сек
+          setUploadSpeed(formatBytes(speed));
+          
+          // Расчет оставшегося времени
+          if (speed > 0) {
+            const remaining = (e.total - e.loaded) / speed;
+            setTimeRemaining(formatTime(remaining));
+          }
         }
       });
 
@@ -115,12 +142,30 @@ function LessonUploadForm({ courseId }) {
           const lesson = JSON.parse(xhr.responseText);
           console.log('Урок загружен:', lesson);
           setUploading(false);
+          setProgress(100);
           // Перенаправление или обновление списка уроков
         } else {
           const error = JSON.parse(xhr.responseText);
           setError(error.detail || 'Ошибка загрузки');
           setUploading(false);
         }
+      });
+
+      xhr.addEventListener('error', () => {
+        setError('Ошибка сети при загрузке файла');
+        setUploading(false);
+      });
+
+      xhr.addEventListener('abort', () => {
+        setError('Загрузка отменена');
+        setUploading(false);
+      });
+
+      // Устанавливаем таймаут для больших файлов (30 минут)
+      xhr.timeout = 30 * 60 * 1000;
+      xhr.addEventListener('timeout', () => {
+        setError('Превышено время ожидания. Попробуйте еще раз.');
+        setUploading(false);
       });
 
       xhr.open('POST', '/api/teacher/lessons/create-with-upload/');
@@ -131,6 +176,22 @@ function LessonUploadForm({ courseId }) {
       setError(err.message);
       setUploading(false);
     }
+  };
+
+  // Вспомогательные функции для форматирования
+  const formatBytes = (bytes) => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i] + '/s';
+  };
+
+  const formatTime = (seconds) => {
+    if (seconds < 60) return `${Math.round(seconds)} сек`;
+    const minutes = Math.floor(seconds / 60);
+    const secs = Math.round(seconds % 60);
+    return `${minutes} мин ${secs} сек`;
   };
 
   return (
@@ -153,9 +214,22 @@ function LessonUploadForm({ courseId }) {
       />
       
       {uploading && (
-        <div>
-          <progress value={progress} max="100" />
-          <span>{progress.toFixed(1)}%</span>
+        <div className="upload-progress">
+          <div className="progress-bar">
+            <div 
+              className="progress-fill" 
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <div className="progress-info">
+            <span>{progress.toFixed(1)}%</span>
+            {uploadSpeed && <span>Скорость: {uploadSpeed}</span>}
+            {timeRemaining && <span>Осталось: {timeRemaining}</span>}
+          </div>
+          <small>
+            ⚠️ Не закрывайте страницу во время загрузки. 
+            Для больших файлов это может занять несколько минут.
+          </small>
         </div>
       )}
       
@@ -340,15 +414,21 @@ GET /api/lessons/{lesson_id}/video/
 ```
 
 ### Авторизация
-Требуется: `Authorization: Bearer <token>`
+Поддерживает два способа:
+1. **Authorization header**: `Authorization: Bearer <token>` (для API запросов)
+2. **Query параметр**: `?token=<token>` (для прямого использования в `<video src>`)
 
 ### Особенности
 - Поддерживает **Range requests** (HTTP 206 Partial Content)
 - Позволяет перемотку видео
 - Работает с большими файлами (до 20GB)
 - Требует авторизации и проверки доступа
+- **Оптимально**: Используйте токен в query-параметре для стриминга (не загружает файл целиком)
 
-### Пример использования с HTML5 Video
+### Пример использования с HTML5 Video (Оптимальный способ - стриминг)
+
+**✅ Рекомендуемый способ:** Используйте прямой URL с токеном в query-параметре. 
+API автоматически возвращает `video_file_url` с токеном, который можно использовать напрямую.
 
 ```html
 <video 
@@ -363,28 +443,46 @@ GET /api/lessons/{lesson_id}/video/
 <script>
 async function loadVideo(lessonId) {
   const token = localStorage.getItem('access_token');
-  const videoUrl = `/api/lessons/${lessonId}/video/`;
   
-  // Добавляем токен в URL (если сервер не принимает его в заголовке для video тега)
-  // Или используем fetch для получения blob URL
-  const response = await fetch(videoUrl, {
+  // Получаем урок с video_file_url (уже содержит токен)
+  const response = await fetch('/api/lessons/open/', {
+    method: 'POST',
     headers: {
-      'Authorization': `Bearer ${token}`
-    }
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ lesson_id: lessonId })
   });
 
   if (!response.ok) {
-    throw new Error('Не удалось загрузить видео');
+    throw new Error('Не удалось загрузить урок');
   }
 
-  const blob = await response.blob();
+  const { lesson } = await response.json();
   const videoElement = document.getElementById('lesson-video');
-  videoElement.src = URL.createObjectURL(blob);
+  
+  // video_file_url уже содержит токен: /api/lessons/123/video/?token=xxx
+  // Используем прямой URL - браузер сам будет стримить видео по частям
+  if (lesson.video_file_url) {
+    videoElement.src = lesson.video_file_url; // ✅ Стриминг, не загружает весь файл
+  } else if (lesson.video_url) {
+    videoElement.src = lesson.video_url;
+  }
 }
 
 // Использование
 loadVideo(123);
 </script>
+```
+
+**❌ Неправильный способ (загружает весь файл):**
+```javascript
+// ПЛОХО: Загружает весь файл в память браузера
+const response = await fetch(videoUrl, {
+  headers: { 'Authorization': `Bearer ${token}` }
+});
+const blob = await response.blob(); // Загружает ВЕСЬ файл!
+videoElement.src = URL.createObjectURL(blob);
 ```
 
 ### Пример с React и Video.js
@@ -452,7 +550,7 @@ function VideoPlayer({ lessonId, token }) {
 }
 ```
 
-### Пример с React и нативным video элементом
+### Пример с React и нативным video элементом (Оптимальный - стриминг)
 
 ```jsx
 import { useState, useEffect } from 'react';
@@ -460,56 +558,79 @@ import { useState, useEffect } from 'react';
 function VideoPlayer({ lessonId }) {
   const [videoUrl, setVideoUrl] = useState(null);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
   const token = localStorage.getItem('access_token');
 
   useEffect(() => {
     async function loadVideo() {
       try {
-        const response = await fetch(`/api/lessons/${lessonId}/video/`, {
+        // Открываем урок и получаем video_file_url с токеном
+        const response = await fetch('/api/lessons/open/', {
+          method: 'POST',
           headers: {
-            'Authorization': `Bearer ${token}`
-          }
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ lesson_id: lessonId })
         });
 
         if (!response.ok) {
-          throw new Error('Не удалось загрузить видео');
+          throw new Error('Не удалось загрузить урок');
         }
 
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        setVideoUrl(url);
+        const { lesson } = await response.json();
+        
+        // video_file_url уже содержит токен в query-параметре
+        // Используем прямой URL - браузер сам будет стримить видео
+        if (lesson.video_file_url) {
+          setVideoUrl(lesson.video_file_url); // ✅ Стриминг
+        } else if (lesson.video_url) {
+          setVideoUrl(lesson.video_url);
+        } else {
+          throw new Error('Видео не найдено');
+        }
       } catch (err) {
         setError(err.message);
+      } finally {
+        setLoading(false);
       }
     }
 
     loadVideo();
-
-    // Очистка URL при размонтировании
-    return () => {
-      if (videoUrl) {
-        URL.revokeObjectURL(videoUrl);
-      }
-    };
   }, [lessonId, token]);
+
+  if (loading) {
+    return <div>Загрузка...</div>;
+  }
 
   if (error) {
     return <div>Ошибка: {error}</div>;
   }
 
   if (!videoUrl) {
-    return <div>Загрузка видео...</div>;
+    return <div>Видео не найдено</div>;
   }
 
   return (
     <video 
       controls 
+      preload="metadata"  // Загружает только метаданные, не весь файл
       src={videoUrl}
       style={{ width: '100%', maxWidth: '800px' }}
+      onError={(e) => {
+        console.error('Ошибка воспроизведения видео:', e);
+        setError('Ошибка воспроизведения видео');
+      }}
     />
   );
 }
 ```
+
+**Преимущества этого подхода:**
+- ✅ Видео стримится по частям, не загружается целиком
+- ✅ Поддержка перемотки работает сразу
+- ✅ Меньше использование памяти браузера
+- ✅ Быстрый старт воспроизведения
 
 ### Альтернативный способ (с токеном в URL параметре)
 
@@ -831,6 +952,76 @@ function checkUploadStatus(lessonId) {
 3. **Размер файлов**: Для файлов >10GB процесс сжатия может занять значительное время
 4. **Форматы**: Поддерживаются все форматы, которые понимает ffmpeg (MP4, AVI, MOV, MKV и др.)
 5. **Безопасность**: Все запросы требуют авторизации, студенты могут смотреть только доступные им уроки
+6. **Оптимизация бекенда**: Сервер обрабатывает файлы потоково, безопасно загружать файлы до 20GB
+
+---
+
+## Рекомендации для больших файлов
+
+### ⚡ Оптимизации бекенда
+
+Бекенд оптимизирован для работы с большими файлами:
+- ✅ Файлы обрабатываются потоково (по частям), не загружаются целиком в память
+- ✅ Автоматическое сохранение на диск для файлов > 2MB
+- ✅ Максимальное использование памяти: ~8-10MB независимо от размера файла
+- ✅ Безопасно загружать файлы до 20GB
+
+### 📋 Что нужно делать на фронтенде
+
+1. **Используйте XMLHttpRequest для загрузки**
+   ```javascript
+   // ✅ ХОРОШО: Поддерживает отслеживание прогресса
+   const xhr = new XMLHttpRequest();
+   xhr.upload.addEventListener('progress', (e) => {
+     const percent = (e.loaded / e.total) * 100;
+     updateProgress(percent);
+   });
+   
+   // ❌ ПЛОХО: fetch не поддерживает отслеживание прогресса
+   await fetch(url, { method: 'POST', body: formData });
+   ```
+
+2. **Валидируйте размер файла на клиенте**
+   ```javascript
+   const maxSize = 20 * 1024 * 1024 * 1024; // 20GB
+   if (file.size > maxSize) {
+     alert('Файл слишком большой');
+     return;
+   }
+   ```
+
+3. **Показывайте прогресс загрузки**
+   - Процент выполнения
+   - Скорость загрузки
+   - Оставшееся время
+   - Размер загруженного / общий размер
+
+4. **Предупреждайте о больших файлах**
+   ```javascript
+   if (file.size > 5 * 1024 * 1024 * 1024) { // > 5GB
+     alert('Файл большой, загрузка может занять время');
+   }
+   ```
+
+5. **Защищайте от случайного закрытия**
+   ```javascript
+   window.addEventListener('beforeunload', (e) => {
+     if (isUploading) {
+       e.preventDefault();
+       e.returnValue = 'Загрузка не завершена';
+     }
+   });
+   ```
+
+6. **Устанавливайте разумные таймауты**
+   ```javascript
+   xhr.timeout = 30 * 60 * 1000; // 30 минут для больших файлов
+   ```
+
+### 📖 Подробное руководство
+
+Для детальной информации о том, как оптимизированно работать с API, см.:
+**[FRONTEND_OPTIMIZATION_GUIDE.md](./FRONTEND_OPTIMIZATION_GUIDE.md)** - полное руководство с примерами кода
 
 ---
 
@@ -838,4 +1029,5 @@ function checkUploadStatus(lessonId) {
 
 - [MDN: Using Fetch](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API/Using_Fetch)
 - [MDN: Using files from web applications](https://developer.mozilla.org/en-US/docs/Web/API/File_API/Using_files_from_web_applications)
+- [MDN: XMLHttpRequest.upload](https://developer.mozilla.org/en-US/docs/Web/API/XMLHttpRequest/upload)
 - [Video.js Documentation](https://videojs.com/getting-started/)

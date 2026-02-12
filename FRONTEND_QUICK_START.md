@@ -109,9 +109,11 @@ function VideoPlayer({ lessonId }) {
 
 1. **Авторизация**: Все запросы требуют `Authorization: Bearer <token>`
 2. **Формат загрузки**: Используйте `FormData` для загрузки файлов
-3. **Размер файла**: Максимум 20GB
+3. **Размер файла**: Максимум 20GB (валидируйте на клиенте перед отправкой)
 4. **Приоритет видео**: `video_file_url` > `video_url`
 5. **Очистка**: Не забывайте `URL.revokeObjectURL()` для blob URL
+6. **Прогресс загрузки**: Используйте `XMLHttpRequest` вместо `fetch` для отслеживания прогресса
+7. **Большие файлы**: Показывайте предупреждения и прогресс для файлов >5GB
 
 ## 🔗 Endpoints
 
@@ -120,4 +122,7 @@ function VideoPlayer({ lessonId }) {
 - `GET /api/lessons/{id}/video/` - Потоковая передача видео
 - `GET /api/teacher/lessons/{id}/` - Получение урока (преподаватель)
 
-Подробная документация: [FRONTEND_VIDEO_API.md](./FRONTEND_VIDEO_API.md)
+## 📚 Документация
+
+- [Полная документация API](./FRONTEND_VIDEO_API.md) - все endpoints и примеры
+- [Руководство по оптимизации](./FRONTEND_OPTIMIZATION_GUIDE.md) - как правильно работать с большими файлами

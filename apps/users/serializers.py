@@ -211,12 +211,25 @@ class LessonVideoSerializer(serializers.ModelSerializer):
     video_file_url = serializers.SerializerMethodField()
     
     def get_video_file_url(self, obj):
-        """Возвращает URL для потоковой передачи видео файла, если он есть."""
+        """
+        Возвращает URL для потоковой передачи видео файла с токеном в query-параметре.
+        Это позволяет использовать прямой URL в <video src="..."> для стриминга.
+        """
         if obj.video_file:
             request = self.context.get('request')
             if request:
-                # Используем endpoint для потоковой передачи вместо прямого URL
-                return request.build_absolute_uri(f"/api/lessons/{obj.id}/video/")
+                # Получаем токен из запроса
+                auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+                token = None
+                if auth_header.startswith('Bearer '):
+                    token = auth_header.split(' ')[1]
+                
+                # Формируем URL с токеном в query-параметре
+                base_url = request.build_absolute_uri(f"/api/lessons/{obj.id}/video/")
+                if token:
+                    from urllib.parse import urlencode
+                    return f"{base_url}?{urlencode({'token': token})}"
+                return base_url
             return f"/api/lessons/{obj.id}/video/"
         return None
     
@@ -311,12 +324,25 @@ class TeacherLessonSerializer(serializers.ModelSerializer):
     video_file_url = serializers.SerializerMethodField()
     
     def get_video_file_url(self, obj):
-        """Возвращает URL для потоковой передачи видео файла, если он есть."""
+        """
+        Возвращает URL для потоковой передачи видео файла с токеном в query-параметре.
+        Это позволяет использовать прямой URL в <video src="..."> для стриминга.
+        """
         if obj.video_file:
             request = self.context.get('request')
             if request:
-                # Используем endpoint для потоковой передачи вместо прямого URL
-                return request.build_absolute_uri(f"/api/lessons/{obj.id}/video/")
+                # Получаем токен из запроса
+                auth_header = request.META.get('HTTP_AUTHORIZATION', '')
+                token = None
+                if auth_header.startswith('Bearer '):
+                    token = auth_header.split(' ')[1]
+                
+                # Формируем URL с токеном в query-параметре
+                base_url = request.build_absolute_uri(f"/api/lessons/{obj.id}/video/")
+                if token:
+                    from urllib.parse import urlencode
+                    return f"{base_url}?{urlencode({'token': token})}"
+                return base_url
             return f"/api/lessons/{obj.id}/video/"
         return None
     
