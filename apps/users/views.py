@@ -57,7 +57,7 @@ from .video_service import optimize_video_for_upload, get_video_info
 from django.conf import settings
 from django.utils import timezone
 from datetime import timedelta
-from django.http import FileResponse, Http404, HttpResponse
+from django.http import FileResponse, Http404, HttpResponse, StreamingHttpResponse
 from django.views.decorators.http import etag
 import mimetypes
 
@@ -589,8 +589,16 @@ class TeacherCreateLessonWithUploadView(APIView):
             # Создаём директорию если нужно
             os.makedirs(os.path.dirname(full_media_path), exist_ok=True)
             
-            # Копируем файл в финальное место
-            shutil.copy2(final_video_path, full_media_path)
+            # КРИТИЧНО: Потоковое копирование файла (не загружаем весь файл в RAM)
+            # Используем буфер 8MB для баланса между скоростью и использованием памяти
+            CHUNK_SIZE = 8 * 1024 * 1024  # 8MB буфер
+            with open(final_video_path, "rb") as src:
+                with open(full_media_path, "wb") as dst:
+                    while True:
+                        chunk = src.read(CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        dst.write(chunk)
 
             # Обновляем урок
             lesson.video_file.name = media_path
@@ -683,15 +691,41 @@ class VideoStreamView(APIView):
             start = int(range_match[0]) if range_match[0] else 0
             end = int(range_match[1]) if len(range_match) > 1 and range_match[1] else file_size - 1
             
-            # Открываем файл и читаем нужный диапазон
-            with open(video_path, "rb") as f:
-                f.seek(start)
-                content = f.read(end - start + 1)
+            # Ограничиваем end размером файла
+            end = min(end, file_size - 1)
+            content_length = end - start + 1
             
-            response = HttpResponse(content, status=206)  # 206 Partial Content
-            response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
-            response["Accept-Ranges"] = "bytes"
-            response["Content-Length"] = len(content)
+            # Для больших диапазонов используем потоковое чтение
+            # Для маленьких (< 10MB) читаем сразу (обычно это метаданные видео)
+            if content_length > 10 * 1024 * 1024:  # > 10MB
+                # Потоковое чтение для больших диапазонов
+                def file_iterator():
+                    with open(video_path, "rb") as f:
+                        f.seek(start)
+                        remaining = content_length
+                        CHUNK_SIZE = 8 * 1024 * 1024  # 8MB буфер
+                        while remaining > 0:
+                            chunk_size = min(CHUNK_SIZE, remaining)
+                            chunk = f.read(chunk_size)
+                            if not chunk:
+                                break
+                            yield chunk
+                            remaining -= len(chunk)
+                
+                response = StreamingHttpResponse(file_iterator(), status=206)
+                response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+                response["Accept-Ranges"] = "bytes"
+                response["Content-Length"] = str(content_length)
+            else:
+                # Для маленьких диапазонов читаем сразу (это нормально)
+                with open(video_path, "rb") as f:
+                    f.seek(start)
+                    content = f.read(content_length)
+                
+                response = HttpResponse(content, status=206)  # 206 Partial Content
+                response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+                response["Accept-Ranges"] = "bytes"
+                response["Content-Length"] = len(content)
         else:
             # Полная передача файла
             response = FileResponse(

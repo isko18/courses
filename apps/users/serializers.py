@@ -422,6 +422,25 @@ class TeacherLessonUploadSerializer(serializers.Serializer):
             raise serializers.ValidationError("Нельзя создавать урок в чужом курсе.")
         return course
 
+    def validate_video_file(self, value):
+        """Валидация размера видео файла БЕЗ чтения файла в память."""
+        if value is None:
+            return value
+        
+        # Проверяем размер файла через атрибут size (не читаем файл)
+        # Это безопасно, так как Django уже знает размер из заголовков HTTP
+        max_size_bytes = 20 * 1024 * 1024 * 1024  # 20GB
+        
+        # Проверяем размер через uploaded_file.size (доступно без чтения)
+        if hasattr(value, 'size') and value.size:
+            if value.size > max_size_bytes:
+                raise serializers.ValidationError(
+                    f"Файл слишком большой ({value.size / (1024**3):.2f}GB). "
+                    f"Максимальный размер: 20GB"
+                )
+        
+        return value
+
     def validate(self, attrs):
         attrs = super().validate(attrs)
 

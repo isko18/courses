@@ -202,11 +202,19 @@ def optimize_video_for_upload(
     input_size_gb = os.path.getsize(input_path) / (1024 ** 3)
     
     # Если файл уже меньше лимита, просто копируем
+    # КРИТИЧНО: Используем потоковое копирование вместо shutil.copy2 для больших файлов
     if input_size_gb <= max_file_size_gb:
         try:
-            import shutil
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            shutil.copy2(input_path, output_path)
+            # Потоковое копирование с буфером 8MB (не загружаем весь файл в RAM)
+            CHUNK_SIZE = 8 * 1024 * 1024  # 8MB
+            with open(input_path, "rb") as src:
+                with open(output_path, "wb") as dst:
+                    while True:
+                        chunk = src.read(CHUNK_SIZE)
+                        if not chunk:
+                            break
+                        dst.write(chunk)
             return True, output_path, None
         except Exception as e:
             return False, None, f"Ошибка копирования: {e}"
