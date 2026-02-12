@@ -153,44 +153,41 @@
         }
 
         const token = getToken();
-        if (!token) {
-          setStatus('error', '<div class="lesson-title">Нет токена. Выполните вход и сохраните access_token в localStorage.</div>');
-          return;
-        }
-
         setStatus('loading', '<div class="lesson-title">Загрузка урока…</div>');
 
         try {
-          const url = (API_BASE || '') + '/api/lessons/open/';
-          const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Authorization': 'Bearer ' + token,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ lesson_id: lessonId })
-          });
+          let videoUrl;
+          let title = 'Урок ' + lessonId;
 
-          if (!response.ok) {
-            const err = await response.json().catch(() => ({}));
-            throw new Error(err.detail || 'Не удалось загрузить урок');
+          if (token) {
+            const url = (API_BASE || '') + '/api/lessons/open/';
+            const response = await fetch(url, {
+              method: 'POST',
+              headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ lesson_id: lessonId })
+            });
+            if (!response.ok) {
+              const err = await response.json().catch(() => ({}));
+              throw new Error(err.detail || 'Не удалось загрузить урок');
+            }
+            const data = await response.json();
+            const lesson = data.lesson;
+            if (!lesson) throw new Error('Урок не найден');
+            videoUrl = lesson.video_url;
+            title = lesson.title || title;
+          } else {
+            videoUrl = (API_BASE || '') + '/api/lessons/' + lessonId + '/video/';
           }
 
-          const data = await response.json();
-          const lesson = data.lesson;
-
-          if (!lesson) {
-            throw new Error('Урок не найден');
-          }
-
-          // Важно: используем video_file_url с токеном — стриминг, без загрузки всего файла
-          const videoUrl = lesson.video_file_url || lesson.video_url;
           if (!videoUrl) {
             throw new Error('У урока нет видео');
           }
 
           player.src({ type: 'video/mp4', src: videoUrl });
-          setStatus('ready', '<div class="lesson-title">' + (lesson.title || 'Урок ' + lessonId) + '</div>');
+          setStatus('ready', '<div class="lesson-title">' + title + '</div>');
         } catch (e) {
           setStatus('error', '<div class="lesson-title">Ошибка: ' + (e.message || 'Неизвестная ошибка') + '</div>');
         }

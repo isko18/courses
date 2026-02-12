@@ -257,6 +257,14 @@ class Lesson(models.Model):
     def __str__(self):
         return self.title
 
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Единый источник URL: если есть видеофайл и URL пустой — сохраняем URL стриминга в БД
+        if self.video_file and not (self.video_url or "").strip():
+            url = f"/api/lessons/{self.pk}/video/"
+            Lesson.objects.filter(pk=self.pk).update(video_url=url)
+            self.video_url = url
+
     def archive(self, by_user=None):
         if self.is_archived:
             return

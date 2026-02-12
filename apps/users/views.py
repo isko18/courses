@@ -600,7 +600,7 @@ class TeacherCreateLessonWithUploadView(APIView):
                             break
                         dst.write(chunk)
 
-            # Обновляем урок
+            # Обновляем урок (video_url подставится в model.save() из БД)
             lesson.video_file.name = media_path
             lesson.video_duration = video_duration
             lesson.youtube_status = "ready"

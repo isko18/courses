@@ -190,9 +190,10 @@ class MyCourseLessonSerializer(serializers.ModelSerializer):
         model = Lesson
         fields = (
             "id",
-            "order",            
+            "order",
             "title",
             "description",
+            "video_url",
             "video_duration",
             "is_archived",
             "is_opened",
@@ -206,49 +207,21 @@ class MyCourseLessonSerializer(serializers.ModelSerializer):
 
 class LessonVideoSerializer(serializers.ModelSerializer):
     """
-    Видео отдаём только после OpenLessonView (когда урок открыт или уже был открыт).
+    Видео отдаём только после OpenLessonView. URL видео — всегда из БД (video_url).
     """
-    video_file_url = serializers.SerializerMethodField()
-    
-    def get_video_file_url(self, obj):
-        """
-        Возвращает URL для потоковой передачи видео файла с токеном в query-параметре.
-        Это позволяет использовать прямой URL в <video src="..."> для стриминга.
-        """
-        if obj.video_file:
-            request = self.context.get('request')
-            if request:
-                # Получаем токен из запроса
-                auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-                token = None
-                if auth_header.startswith('Bearer '):
-                    token = auth_header.split(' ')[1]
-                
-                # Формируем URL с токеном в query-параметре
-                base_url = request.build_absolute_uri(f"/api/lessons/{obj.id}/video/")
-                if token:
-                    from urllib.parse import urlencode
-                    return f"{base_url}?{urlencode({'token': token})}"
-                return base_url
-            return f"/api/lessons/{obj.id}/video/"
-        return None
-    
     class Meta:
         model = Lesson
         fields = (
             "id",
             "title",
             "video_url",
-            "video_file_url",
             "youtube_video_id",
             "youtube_status",
             "description",
             "video_duration",
-            # ✅ ДЗ
             "homework_title",
             "homework_description",
             "homework_link",
-            # ⚠️ homework_file лучше отдавать отдельным защищённым endpoint
         )
 
 
@@ -321,31 +294,7 @@ class HomeworkUpdateSerializer(serializers.ModelSerializer):
 # TEACHER: LESSONS + ARCHIVE + UPLOAD + HOMEWORK TASK
 # =========================
 class TeacherLessonSerializer(serializers.ModelSerializer):
-    video_file_url = serializers.SerializerMethodField()
-    
-    def get_video_file_url(self, obj):
-        """
-        Возвращает URL для потоковой передачи видео файла с токеном в query-параметре.
-        Это позволяет использовать прямой URL в <video src="..."> для стриминга.
-        """
-        if obj.video_file:
-            request = self.context.get('request')
-            if request:
-                # Получаем токен из запроса
-                auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-                token = None
-                if auth_header.startswith('Bearer '):
-                    token = auth_header.split(' ')[1]
-                
-                # Формируем URL с токеном в query-параметре
-                base_url = request.build_absolute_uri(f"/api/lessons/{obj.id}/video/")
-                if token:
-                    from urllib.parse import urlencode
-                    return f"{base_url}?{urlencode({'token': token})}"
-                return base_url
-            return f"/api/lessons/{obj.id}/video/"
-        return None
-    
+    """URL видео — из БД (video_url)."""
     class Meta:
         model = Lesson
         fields = (
@@ -355,7 +304,6 @@ class TeacherLessonSerializer(serializers.ModelSerializer):
             "order",
             "description",
             "video_url",
-            "video_file_url",
             "youtube_video_id",
             "youtube_status",
             "youtube_error",
