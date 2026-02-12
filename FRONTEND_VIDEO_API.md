@@ -13,9 +13,10 @@
 2. [Получение информации об уроке](#получение-информации-об-уроке)
 3. [Открытие урока (Студент)](#открытие-урока)
 4. [Потоковая передача видео](#потоковая-передача-видео)
-5. [Примеры использования](#примеры-использования)
-6. [Обработка ошибок](#обработка-ошибок)
-7. [Рекомендации для больших файлов](#рекомендации-для-больших-файлов)
+5. [Плеер уровня YouTube (Video.js)](#плеер-уровня-youtube-videojs)
+6. [Примеры использования](#примеры-использования)
+7. [Обработка ошибок](#обработка-ошибок)
+8. [Рекомендации для больших файлов](#рекомендации-для-больших-файлов)
 
 ---
 
@@ -631,6 +632,133 @@ function VideoPlayer({ lessonId }) {
 - ✅ Поддержка перемотки работает сразу
 - ✅ Меньше использование памяти браузера
 - ✅ Быстрый старт воспроизведения
+
+---
+
+## Плеер уровня YouTube (Video.js)
+
+Чтобы воспроизведение на фронте было на уровне YouTube (скорость, полноэкранный режим, буферизация, удобные контролы), используйте **Video.js** и подставляйте в плеер **прямой URL** `video_file_url` — так видео стримится, без загрузки всего файла в память.
+
+### Что даёт уровень YouTube
+
+- **Скорость воспроизведения** — 0.5x, 0.75x, 1x, 1.25x, 1.5x, 2x
+- **Полноэкранный режим** и Picture-in-Picture (где поддерживается)
+- **Перемотка по прогресс-бару** — сервер уже отдаёт по Range
+- **Буферизация** — `preload="auto"` для плавного просмотра
+- **Адаптивная вёрстка** — `fluid: true` (16:9)
+- **Клавиатура** — пробел (play/pause), стрелки (перемотка)
+
+### Подключение Video.js (CDN)
+
+```html
+<link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet">
+<video id="lesson-video" class="video-js vjs-big-play-centered vjs-fluid" controls preload="auto" playsinline></video>
+<script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+```
+
+### Инициализация со стримингом (без загрузки всего файла)
+
+**Важно:** передавайте в плеер именно `lesson.video_file_url` (URL с токеном). Не используйте `fetch` + `blob` — иначе файл скачается целиком.
+
+```javascript
+// 1. Открыть урок и получить video_file_url
+const response = await fetch('/api/lessons/open/', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({ lesson_id: lessonId })
+});
+const { lesson } = await response.json();
+
+// 2. Инициализация Video.js один раз
+const player = videojs('lesson-video', {
+  controls: true,
+  fluid: true,
+  preload: 'auto',
+  playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2]
+});
+
+// 3. Подставить URL — браузер будет стримить по Range
+player.src({ type: 'video/mp4', src: lesson.video_file_url });
+```
+
+### React: плеер уровня YouTube
+
+```jsx
+import { useEffect, useRef, useState } from 'react';
+import videojs from 'video.js';
+import 'video.js/dist/video-js.css';
+
+function YouTubeLevelPlayer({ lessonId }) {
+  const videoRef = useRef(null);
+  const playerRef = useRef(null);
+  const [videoUrl, setVideoUrl] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const token = localStorage.getItem('access_token');
+
+  useEffect(() => {
+    async function load() {
+      if (!lessonId || !token) {
+        setLoading(false);
+        return;
+      }
+      try {
+        const res = await fetch('/api/lessons/open/', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ lesson_id: lessonId })
+        });
+        if (!res.ok) throw new Error('Не удалось загрузить урок');
+        const { lesson } = await res.json();
+        const url = lesson.video_file_url || lesson.video_url;
+        if (!url) throw new Error('Видео не найдено');
+        setVideoUrl(url);
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [lessonId, token]);
+
+  useEffect(() => {
+    if (!videoRef.current || !videoUrl) return;
+    const player = videojs(videoRef.current, {
+      controls: true,
+      fluid: true,
+      preload: 'auto',
+      playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2],
+      sources: [{ src: videoUrl, type: 'video/mp4' }]
+    });
+    playerRef.current = player;
+    return () => {
+      player.dispose();
+      playerRef.current = null;
+    };
+  }, [videoUrl]);
+
+  if (loading) return <div>Загрузка…</div>;
+  if (error) return <div className="error">Ошибка: {error}</div>;
+  if (!videoUrl) return null;
+
+  return (
+    <div data-vjs-player>
+      <video ref={videoRef} className="video-js vjs-big-play-centered" playsInline />
+    </div>
+  );
+}
+```
+
+### Готовый пример
+
+В репозитории есть готовый HTML-пример: **`frontend-examples/youtube-level-player.html`**. Подставьте свой `API_BASE` и способ получения токена (например, `localStorage.getItem('access_token')`), откройте файл в браузере и введите ID урока — видео будет воспроизводиться через стриминг, как на YouTube.
 
 ### Альтернативный способ (с токеном в URL параметре)
 

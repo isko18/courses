@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Плеер уровня YouTube — урок</title>
+  <!-- Video.js: плеер уровня YouTube -->
+  <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet">
+  <style>
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0f0f0f;
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .player-wrap {
+      width: 100%;
+      max-width: 1280px;
+      margin: 0 auto;
+    }
+    /* Как на YouTube: тёмная тема, большая кнопка play */
+    .video-js.vjs-fluid {
+      padding-top: 56.25%; /* 16:9 */
+    }
+    .video-js .vjs-big-play-button {
+      border: none;
+      border-radius: 50%;
+      width: 80px;
+      height: 80px;
+      line-height: 80px;
+      font-size: 3em;
+      left: 50%;
+      top: 50%;
+      margin-left: -40px;
+      margin-top: -40px;
+      background: rgba(255,0,0,0.9);
+    }
+    .video-js:hover .vjs-big-play-button {
+      background: #f00;
+    }
+    .video-js .vjs-control-bar {
+      background: linear-gradient(transparent, rgba(0,0,0,0.8));
+    }
+    .status {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 8px;
+      max-width: 1280px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .status.loading { background: #1a1a1a; color: #aaa; }
+    .status.error { background: #2a1515; color: #f66; }
+    .status.ready { background: #151a15; color: #6f6; }
+    .lesson-title {
+      font-size: 1.25rem;
+      margin-bottom: 8px;
+    }
+    input, button {
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 1px solid #333;
+      background: #1a1a1a;
+      color: #fff;
+      font-size: 1rem;
+    }
+    button {
+      cursor: pointer;
+      background: #f00;
+      border-color: #f00;
+      margin-left: 8px;
+    }
+    button:hover { background: #c00; }
+  </style>
+</head>
+<body>
+  <div class="player-wrap">
+    <video
+      id="lesson-video"
+      class="video-js vjs-big-play-centered vjs-fluid"
+      controls
+      preload="auto"
+      playsinline
+      controlsList="nodownload"
+      crossorigin="anonymous"
+      data-setup='{}'
+    >
+      <p class="vjs-no-js">Включите JavaScript для воспроизведения видео.</p>
+    </video>
+  </div>
+
+  <div id="status" class="status ready">
+    <div class="lesson-title">Введите ID урока и нажмите «Загрузить»</div>
+    <label>
+      ID урока:
+      <input type="number" id="lesson-id" value="1" min="1" placeholder="1">
+    </label>
+    <button type="button" id="btn-load">Загрузить урок</button>
+  </div>
+
+  <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+  <script>
+    (function () {
+      // ========== Настройки: подставьте свой API и способ хранения токена ==========
+      const API_BASE = ''; // например: 'https://your-api.com' или оставьте '' для того же хоста
+      function getToken() {
+        return localStorage.getItem('access_token') || '';
+      }
+
+      const statusEl = document.getElementById('status');
+      const lessonIdInput = document.getElementById('lesson-id');
+      const btnLoad = document.getElementById('btn-load');
+
+      function setStatus(className, html) {
+        statusEl.className = 'status ' + className;
+        statusEl.innerHTML = html;
+      }
+
+      // Инициализация Video.js один раз (без источника)
+      const player = videojs('lesson-video', {
+        controls: true,
+        responsive: true,
+        fluid: true,
+        preload: 'auto',
+        playbackRates: [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2],
+        html5: {
+          vhs: { overrideNative: true },
+          nativeAudioTracks: false,
+          nativeVideoTracks: false
+        }
+      });
+
+      player.ready(function () {
+        // Уровень YouTube: быстрый старт и буферизация
+        const v = player.tech(true).el();
+        if (v) {
+          v.setAttribute('playsinline', true);
+          v.setAttribute('preload', 'auto');
+        }
+      });
+
+      async function loadLesson() {
+        const lessonId = parseInt(lessonIdInput.value, 10);
+        if (!lessonId) {
+          setStatus('error', '<div class="lesson-title">Укажите ID урока</div>');
+          return;
+        }
+
+        const token = getToken();
+        if (!token) {
+          setStatus('error', '<div class="lesson-title">Нет токена. Выполните вход и сохраните access_token в localStorage.</div>');
+          return;
+        }
+
+        setStatus('loading', '<div class="lesson-title">Загрузка урока…</div>');
+
+        try {
+          const url = (API_BASE || '') + '/api/lessons/open/';
+          const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+              'Authorization': 'Bearer ' + token,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ lesson_id: lessonId })
+          });
+
+          if (!response.ok) {
+            const err = await response.json().catch(() => ({}));
+            throw new Error(err.detail || 'Не удалось загрузить урок');
+          }
+
+          const data = await response.json();
+          const lesson = data.lesson;
+
+          if (!lesson) {
+            throw new Error('Урок не найден');
+          }
+
+          // Важно: используем video_file_url с токеном — стриминг, без загрузки всего файла
+          const videoUrl = lesson.video_file_url || lesson.video_url;
+          if (!videoUrl) {
+            throw new Error('У урока нет видео');
+          }
+
+          player.src({ type: 'video/mp4', src: videoUrl });
+          setStatus('ready', '<div class="lesson-title">' + (lesson.title || 'Урок ' + lessonId) + '</div>');
+        } catch (e) {
+          setStatus('error', '<div class="lesson-title">Ошибка: ' + (e.message || 'Неизвестная ошибка') + '</div>');
+        }
+      }
+
+      btnLoad.addEventListener('click', loadLesson);
+    })();
+  </script>
+</body>
+</html>

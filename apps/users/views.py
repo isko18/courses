@@ -57,7 +57,7 @@ from .video_service import optimize_video_for_upload, get_video_info
 from django.conf import settings
 from django.utils import timezone
 from datetime import timedelta
-from django.http import FileResponse, Http404, HttpResponse, StreamingHttpResponse
+from django.http import FileResponse, Http404, HttpResponse, HttpResponseNotModified, StreamingHttpResponse
 from django.views.decorators.http import etag
 import mimetypes
 
@@ -624,158 +624,241 @@ class TeacherCreateLessonWithUploadView(APIView):
 
 
 # =========================
-# VIDEO STREAMING (с поддержкой Range requests для видео)
+# VIDEO STREAMING (оптимизировано под воспроизведение уровня YouTube)
 # =========================
+
+# Размер чанка для стриминга: быстрая отдача первых байт и перемотка (как у YouTube)
+VIDEO_STREAM_CHUNK_SIZE = 2 * 1024 * 1024  # 2 MB
+# Порог: диапазон больше этого — отдаём потоком; меньше — одним куском (метаданные MP4)
+VIDEO_STREAM_THRESHOLD = 10 * 1024 * 1024  # 10 MB
+
+
+def _video_stream_etag(video_path):
+    """ETag по пути, mtime и размеру — для 304 Not Modified."""
+    try:
+        stat = os.stat(video_path)
+        return f'"{os.path.basename(video_path)}-{stat.st_mtime_ns}-{stat.st_size}"'
+    except OSError:
+        return None
+
+
+def _video_stream_get_user(request):
+    """Проверка авторизации (Bearer или ?token=). Возвращает user или None."""
+    auth_header = request.META.get("HTTP_AUTHORIZATION", "")
+    if auth_header.startswith("Bearer "):
+        from rest_framework_simplejwt.tokens import AccessToken
+        from rest_framework_simplejwt.exceptions import InvalidToken
+        try:
+            token = AccessToken(auth_header.split(" ", 1)[1])
+            return token.user
+        except (InvalidToken, IndexError, AttributeError):
+            pass
+    token_param = request.GET.get("token")
+    if token_param:
+        from rest_framework_simplejwt.tokens import AccessToken
+        from rest_framework_simplejwt.exceptions import InvalidToken
+        try:
+            token = AccessToken(token_param)
+            return token.user
+        except (InvalidToken, AttributeError):
+            pass
+    return None
+
+
+def _video_stream_check_access(user, lesson):
+    """Проверка доступа к уроку. Возвращает None или Response с ошибкой."""
+    from .models import CourseAccess
+    if user.is_staff or user.is_superuser:
+        return None
+    if getattr(user, "role", None) == "student":
+        access = CourseAccess.objects.filter(
+            user=user, course=lesson.course, is_active=True
+        ).first()
+        if not access:
+            return Response({"detail": "Нет доступа к этому уроку."}, status=403)
+        if lesson.order > access.video_limit:
+            return Response({"detail": "Тариф не позволяет открыть этот урок."}, status=402)
+        return None
+    if getattr(user, "role", None) == "teacher":
+        if lesson.course.instructor_id != user.id:
+            return Response({"detail": "Нет доступа к этому уроку."}, status=403)
+        return None
+    return Response({"detail": "Нет доступа к этому уроку."}, status=403)
+
+
 class VideoStreamView(APIView):
     """
-    Потоковая передача видео файлов с поддержкой Range requests.
-    Это необходимо для корректной работы видео плееров (перемотка, пауза).
+    Потоковая передача видео с поддержкой Range, HEAD, ETag/304.
+    Оптимизировано для быстрого старта воспроизведения и перемотки (уровень YouTube).
     
-    Поддерживает два способа авторизации:
-    1. Authorization header (Bearer token) - для API запросов
-    2. Query параметр ?token=xxx - для прямого использования в <video src>
+    Авторизация: Bearer в заголовке или ?token= в query.
     """
-    # Убираем обязательную авторизацию, проверяем вручную
     permission_classes = []
 
-    def get(self, request, lesson_id):
-        """Потоковая передача видео файла урока."""
-        # Проверяем авторизацию: либо через header, либо через query параметр
-        user = None
-        token = None
-        
-        # Способ 1: Authorization header
-        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-        if auth_header.startswith('Bearer '):
-            from rest_framework_simplejwt.tokens import AccessToken
-            from rest_framework_simplejwt.exceptions import InvalidToken
-            try:
-                token_str = auth_header.split(' ')[1]
-                token = AccessToken(token_str)
-                user = token.user
-            except (InvalidToken, IndexError, AttributeError):
-                pass
-        
-        # Способ 2: Query параметр token
+    def _get_lesson_and_file(self, request, lesson_id):
+        """Общая логика: авторизация, урок, доступ, путь к файлу. Возвращает (lesson, video_path, content_type, file_size) или (None, response)."""
+        user = _video_stream_get_user(request)
         if not user:
-            token_param = request.GET.get('token')
-            if token_param:
-                from rest_framework_simplejwt.tokens import AccessToken
-                from rest_framework_simplejwt.exceptions import InvalidToken
-                try:
-                    token = AccessToken(token_param)
-                    user = token.user
-                except (InvalidToken, AttributeError):
-                    return Response({"detail": "Неверный токен."}, status=401)
-        
-        # Если нет авторизации - возвращаем 401
-        if not user:
-            return Response({"detail": "Требуется авторизация."}, status=401)
-        
+            return None, Response({"detail": "Требуется авторизация."}, status=401)
         try:
             lesson = Lesson.objects.select_related("course").get(
-                id=lesson_id,
-                is_archived=False
+                id=lesson_id, is_archived=False
             )
         except Lesson.DoesNotExist:
             raise Http404("Урок не найден")
-
-        # Проверяем доступ
-        # Админы (staff/superuser) имеют доступ ко всем видео
-        if user.is_staff or user.is_superuser:
-            pass  # Админы могут смотреть все видео
-        elif user.role == "student":
-            access = CourseAccess.objects.filter(
-                user=user,
-                course=lesson.course,
-                is_active=True
-            ).first()
-            
-            if not access:
-                return Response({"detail": "Нет доступа к этому уроку."}, status=403)
-            
-            if lesson.order > access.video_limit:
-                return Response({"detail": "Тариф не позволяет открыть этот урок."}, status=402)
-        
-        elif user.role == "teacher":
-            # Преподаватель может смотреть только свои уроки
-            if lesson.course.instructor_id != user.id:
-                return Response({"detail": "Нет доступа к этому уроку."}, status=403)
-        else:
-            return Response({"detail": "Нет доступа к этому уроку."}, status=403)
-        
-        # Проверяем наличие видео файла
+        err = _video_stream_check_access(user, lesson)
+        if err:
+            return None, err
         if not lesson.video_file:
-            return Response({"detail": "Видео файл не найден."}, status=404)
-        
+            return None, Response({"detail": "Видео файл не найден."}, status=404)
         video_path = lesson.video_file.path
-        
         if not os.path.exists(video_path):
-            return Response({"detail": "Видео файл не существует на сервере."}, status=404)
-        
-        # Определяем MIME тип
+            return None, Response({"detail": "Видео файл не существует на сервере."}, status=404)
         content_type, _ = mimetypes.guess_type(video_path)
         if not content_type:
             content_type = "video/mp4"
-        
-        # Поддержка Range requests для потоковой передачи
         file_size = os.path.getsize(video_path)
-        range_header = request.META.get("HTTP_RANGE", "").strip()
-        
-        if range_header:
-            # Парсим Range заголовок
-            range_match = range_header.replace("bytes=", "").split("-")
-            start = int(range_match[0]) if range_match[0] else 0
-            end = int(range_match[1]) if len(range_match) > 1 and range_match[1] else file_size - 1
-            
-            # Ограничиваем end размером файла
+        return (lesson, video_path, content_type, file_size), None
+
+    def _build_stream_response(
+        self, request, video_path, content_type, file_size, head_only=False
+    ):
+        """Строит ответ 206/200 со стримингом или 416, 304. head_only — без тела (для HEAD)."""
+        range_header = (request.META.get("HTTP_RANGE") or "").strip()
+        etag = _video_stream_etag(video_path)
+        if etag and request.META.get("HTTP_IF_NONE_MATCH", "").strip() == etag:
+            r = HttpResponseNotModified()
+            r["ETag"] = etag
+            r["Cache-Control"] = "public, max-age=3600"
+            r["Accept-Ranges"] = "bytes"
+            return r
+
+        start, end = 0, file_size - 1
+        if range_header.startswith("bytes="):
+            parts = range_header[6:].strip().split("-")
+            try:
+                start = int(parts[0]) if parts[0] else 0
+                end = int(parts[1]) if len(parts) > 1 and parts[1] else file_size - 1
+            except (ValueError, IndexError):
+                r = Response(
+                    {"detail": "Неверный заголовок Range."},
+                    status=416,
+                )
+                r["Content-Range"] = f"bytes */{file_size}"
+                return r
+            start = max(0, start)
             end = min(end, file_size - 1)
-            content_length = end - start + 1
-            
-            # Для больших диапазонов используем потоковое чтение
-            # Для маленьких (< 10MB) читаем сразу (обычно это метаданные видео)
-            if content_length > 10 * 1024 * 1024:  # > 10MB
-                # Потоковое чтение для больших диапазонов
-                def file_iterator():
-                    with open(video_path, "rb") as f:
-                        f.seek(start)
-                        remaining = content_length
-                        CHUNK_SIZE = 8 * 1024 * 1024  # 8MB буфер
-                        while remaining > 0:
-                            chunk_size = min(CHUNK_SIZE, remaining)
-                            chunk = f.read(chunk_size)
-                            if not chunk:
-                                break
-                            yield chunk
-                            remaining -= len(chunk)
-                
-                response = StreamingHttpResponse(file_iterator(), status=206)
-                response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
-                response["Accept-Ranges"] = "bytes"
-                response["Content-Length"] = str(content_length)
-            else:
-                # Для маленьких диапазонов читаем сразу (это нормально)
+            if start > end or start >= file_size:
+                r = HttpResponse(status=416)
+                r["Content-Range"] = f"bytes */{file_size}"
+                return r
+
+        content_length = end - start + 1
+        use_stream = content_length > VIDEO_STREAM_THRESHOLD
+
+        if head_only:
+            response = HttpResponse(status=206)
+            response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+            response["Content-Length"] = str(content_length)
+        elif use_stream:
+            def file_iterator():
                 with open(video_path, "rb") as f:
                     f.seek(start)
-                    content = f.read(content_length)
-                
-                response = HttpResponse(content, status=206)  # 206 Partial Content
-                response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
-                response["Accept-Ranges"] = "bytes"
-                response["Content-Length"] = len(content)
+                    remaining = content_length
+                    while remaining > 0:
+                        chunk_size = min(VIDEO_STREAM_CHUNK_SIZE, remaining)
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        yield chunk
+                        remaining -= len(chunk)
+
+            response = StreamingHttpResponse(file_iterator(), status=206)
+            response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+            response["Content-Length"] = str(content_length)
         else:
-            # Полная передача файла
-            response = FileResponse(
-                open(video_path, "rb"),
-                content_type=content_type
-            )
-            response["Content-Length"] = file_size
-            response["Accept-Ranges"] = "bytes"
-        
+            with open(video_path, "rb") as f:
+                f.seek(start)
+                content = f.read(content_length)
+            response = HttpResponse(content, status=206)
+            response["Content-Range"] = f"bytes {start}-{end}/{file_size}"
+            response["Content-Length"] = str(len(content))
+
         response["Content-Type"] = content_type
+        response["Accept-Ranges"] = "bytes"
         response["Cache-Control"] = "public, max-age=3600"
-        
+        if etag:
+            response["ETag"] = etag
         return response
+
+    def get(self, request, lesson_id):
+        data, err = self._get_lesson_and_file(request, lesson_id)
+        if err is not None:
+            return err
+        lesson, video_path, content_type, file_size = data
+        range_header = (request.META.get("HTTP_RANGE") or "").strip()
+        if not range_header:
+            # Без Range — отдаём весь файл потоком (не грузим в память), как один диапазон 0-(size-1)
+            start, end = 0, file_size - 1
+            content_length = file_size
+            etag = _video_stream_etag(video_path)
+            if etag and request.META.get("HTTP_IF_NONE_MATCH", "").strip() == etag:
+                r = HttpResponseNotModified()
+                r["ETag"] = etag
+                r["Cache-Control"] = "public, max-age=3600"
+                r["Accept-Ranges"] = "bytes"
+                return r
+
+            def full_file_iterator():
+                with open(video_path, "rb") as f:
+                    remaining = file_size
+                    while remaining > 0:
+                        chunk_size = min(VIDEO_STREAM_CHUNK_SIZE, remaining)
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        yield chunk
+                        remaining -= len(chunk)
+
+            response = StreamingHttpResponse(full_file_iterator(), status=200)
+            response["Content-Length"] = str(file_size)
+            response["Content-Type"] = content_type
+            response["Accept-Ranges"] = "bytes"
+            response["Cache-Control"] = "public, max-age=3600"
+            if etag:
+                response["ETag"] = etag
+            return response
+
+        return self._build_stream_response(
+            request, video_path, content_type, file_size, head_only=False
+        )
+
+    def head(self, request, lesson_id):
+        """HEAD: те же заголовки, что и GET (Content-Length, Accept-Ranges, ETag), без тела."""
+        data, err = self._get_lesson_and_file(request, lesson_id)
+        if err is not None:
+            return err
+        lesson, video_path, content_type, file_size = data
+        range_header = (request.META.get("HTTP_RANGE") or "").strip()
+        if not range_header:
+            etag = _video_stream_etag(video_path)
+            if etag and request.META.get("HTTP_IF_NONE_MATCH", "").strip() == etag:
+                r = HttpResponseNotModified()
+                r["ETag"] = etag
+                r["Cache-Control"] = "public, max-age=3600"
+                r["Accept-Ranges"] = "bytes"
+                return r
+            response = HttpResponse(status=200)
+            response["Content-Length"] = str(file_size)
+            response["Content-Type"] = content_type
+            response["Accept-Ranges"] = "bytes"
+            response["Cache-Control"] = "public, max-age=3600"
+            if etag:
+                response["ETag"] = etag
+            return response
+        return self._build_stream_response(
+            request, video_path, content_type, file_size, head_only=True
+        )
 
 
 # =========================
