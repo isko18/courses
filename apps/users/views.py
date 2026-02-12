@@ -689,26 +689,23 @@ def _video_stream_check_access(user, lesson):
 class VideoStreamView(APIView):
     """
     Потоковая передача видео с поддержкой Range, HEAD, ETag/304.
-    Оптимизировано для быстрого старта воспроизведения и перемотки (уровень YouTube).
-    
-    Авторизация: Bearer в заголовке или ?token= в query.
+    Просмотр без авторизации: достаточно URL урока. С авторизацией проверяется доступ по тарифу.
     """
     permission_classes = []
 
     def _get_lesson_and_file(self, request, lesson_id):
-        """Общая логика: авторизация, урок, доступ, путь к файлу. Возвращает (lesson, video_path, content_type, file_size) или (None, response)."""
+        """Урок и файл: без авторизации — отдаём видео любому; с авторизацией — проверяем доступ к курсу."""
         user = _video_stream_get_user(request)
-        if not user:
-            return None, Response({"detail": "Требуется авторизация."}, status=401)
         try:
             lesson = Lesson.objects.select_related("course").get(
                 id=lesson_id, is_archived=False
             )
         except Lesson.DoesNotExist:
             raise Http404("Урок не найден")
-        err = _video_stream_check_access(user, lesson)
-        if err:
-            return None, err
+        if user:
+            err = _video_stream_check_access(user, lesson)
+            if err:
+                return None, err
         if not lesson.video_file:
             return None, Response({"detail": "Видео файл не найден."}, status=404)
         video_path = lesson.video_file.path
