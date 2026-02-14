@@ -420,6 +420,11 @@ class TeacherLessonListCreateView(generics.ListCreateAPIView):
 
         return qs.order_by("order", "id")
 
+    def list(self, request, *args, **kwargs):
+        """Уроки учителя — без пагинации, все сразу."""
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
 
     def get_serializer_class(self):
         if self.request.method == "POST":
