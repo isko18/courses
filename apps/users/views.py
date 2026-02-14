@@ -219,6 +219,7 @@ class TariffListView(generics.ListAPIView):
 class LessonListPublicView(generics.ListAPIView):
     permission_classes = [permissions.AllowAny]
     serializer_class = LessonPublicSerializer
+    pagination_class = None  # все уроки сразу (для курса — полный список)
 
     def get_queryset(self):
         qs = Lesson.objects.select_related("course").filter(is_archived=False, course__is_archived=False)
