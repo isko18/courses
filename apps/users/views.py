@@ -901,10 +901,14 @@ class TeacherHomeworksView(generics.ListAPIView):
     serializer_class = TeacherHomeworkSerializer
 
     def get_queryset(self):
+        # Свои курсы + курсы без преподавателя (instructor=NULL), чтобы все домашки были видны
         qs = (
             Homework.objects
             .select_related("lesson", "lesson__course", "user")
-            .filter(lesson__course__instructor=self.request.user)
+            .filter(
+                Q(lesson__course__instructor=self.request.user)
+                | Q(lesson__course__instructor__isnull=True)
+            )
             .order_by("-created_at")
         )
 
