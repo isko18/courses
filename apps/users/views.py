@@ -926,6 +926,12 @@ class TeacherHomeworksView(generics.ListAPIView):
 
         return qs
 
+    def list(self, request, *args, **kwargs):
+        """ДЗ учителя — без пагинации, все сразу."""
+        queryset = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
 
 class TeacherHomeworkUpdateView(generics.UpdateAPIView):
     permission_classes = [permissions.IsAuthenticated, IsTeacher]
