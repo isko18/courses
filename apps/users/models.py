@@ -259,8 +259,8 @@ class Lesson(models.Model):
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
-        # Единый источник URL: если есть видеофайл и URL пустой — сохраняем URL стриминга в БД
-        if self.video_file and not (self.video_url or "").strip():
+        # При наличии видеофайла всегда записываем URL стриминга (в т.ч. при замене файла в админке)
+        if self.video_file:
             url = f"/api/lessons/{self.pk}/video/"
             Lesson.objects.filter(pk=self.pk).update(video_url=url)
             self.video_url = url
