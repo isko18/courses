@@ -1,7 +1,11 @@
 import os
 import tempfile
 import shutil
+import threading
+import logging
 from django.db import transaction
+from django.utils.text import slugify
+logger = logging.getLogger(__name__)
 from django.db.models import Count, Exists, OuterRef, Q
 from django.db.models import BooleanField, Case, When, Value
 
@@ -451,6 +455,71 @@ class TeacherLessonUnarchiveView(APIView):
 
 
 # =========================
+# ASYNC VIDEO PROCESSING (фоновая обработка после загрузки)
+# =========================
+VIDEO_COPY_CHUNK_SIZE = 8 * 1024 * 1024  # 8MB
+
+
+def _process_video_upload_task(lesson_id, tmp_dir, tmp_path, safe_name, title, compression_enabled, max_size_gb):
+    """
+    Выполняется в фоновом потоке: оптимизация, копирование в media, обновление урока.
+    """
+    from django.db import connection
+    connection.close()
+    try:
+        if compression_enabled:
+            optimized_path = os.path.join(tmp_dir, "optimized_" + safe_name)
+            success, final_path, error = optimize_video_for_upload(
+                tmp_path, optimized_path, max_file_size_gb=max_size_gb
+            )
+            if not success:
+                Lesson.objects.filter(pk=lesson_id).update(
+                    youtube_status="error",
+                    youtube_error=error or "Ошибка оптимизации видео",
+                )
+                return
+            final_video_path = final_path
+        else:
+            final_video_path = tmp_path
+
+        video_info = get_video_info(final_video_path)
+        video_duration = None
+        if video_info and video_info.get("duration"):
+            video_duration = timedelta(seconds=int(video_info["duration"]))
+
+        timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
+        filename_base = slugify(title)[:50] or "video"
+        file_extension = os.path.splitext(safe_name)[1] or ".mp4"
+        final_filename = f"{filename_base}_{timestamp}{file_extension}"
+        media_path = os.path.join("videos", timezone.now().strftime("%Y/%m/%d"), final_filename)
+        full_media_path = os.path.join(settings.MEDIA_ROOT, media_path)
+        os.makedirs(os.path.dirname(full_media_path), exist_ok=True)
+
+        with open(final_video_path, "rb") as src:
+            with open(full_media_path, "wb") as dst:
+                while True:
+                    chunk = src.read(VIDEO_COPY_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    dst.write(chunk)
+
+        lesson = Lesson.objects.get(pk=lesson_id)
+        lesson.video_file.name = media_path
+        lesson.video_duration = video_duration
+        lesson.youtube_status = "ready"
+        lesson.youtube_error = ""
+        lesson.save(update_fields=["video_file", "video_duration", "youtube_status", "youtube_error"])
+    except Exception as e:
+        logger.exception("Ошибка фоновой обработки видео lesson_id=%s", lesson_id)
+        Lesson.objects.filter(pk=lesson_id).update(
+            youtube_status="error",
+            youtube_error=str(e),
+        )
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+# =========================
 # TEACHER: CREATE LESSON + UPLOAD VIDEO TO YOUTUBE PROJECT
 # =========================
 class TeacherCreateLessonWithUploadView(APIView):
@@ -538,89 +607,31 @@ class TeacherCreateLessonWithUploadView(APIView):
                 lesson.youtube_status = "error"
                 lesson.youtube_error = f"Файл слишком большой ({file_size_gb:.2f}GB). Максимальный размер: {max_size_gb}GB"
                 lesson.save(update_fields=["youtube_status", "youtube_error"])
+                shutil.rmtree(tmp_dir, ignore_errors=True)
                 return Response(
                     {"detail": lesson.youtube_error, "lesson_id": lesson.id},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # Оптимизируем видео (сжатие если нужно)
-            optimized_path = os.path.join(tmp_dir, "optimized_" + safe_name)
             compression_enabled = getattr(settings, "VIDEO_COMPRESSION_ENABLED", True)
-            
-            if compression_enabled:
-                success, final_path, error = optimize_video_for_upload(
-                    tmp_path,
-                    optimized_path,
-                    max_file_size_gb=max_size_gb,
-                )
-                
-                if not success:
-                    lesson.youtube_status = "error"
-                    lesson.youtube_error = error or "Ошибка оптимизации видео"
-                    lesson.save(update_fields=["youtube_status", "youtube_error"])
-                    return Response(
-                        {"detail": lesson.youtube_error, "lesson_id": lesson.id},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-                
-                final_video_path = final_path
-            else:
-                final_video_path = tmp_path
-
-            # Получаем информацию о видео (длительность)
-            video_info = get_video_info(final_video_path)
-            video_duration = None
-            if video_info and video_info.get("duration"):
-                video_duration = timedelta(seconds=int(video_info["duration"]))
-
-            # Сохраняем файл в MEDIA_ROOT
-            # Генерируем уникальное имя файла
-            from django.utils.text import slugify
-            from django.utils import timezone
-            timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
-            filename_base = slugify(title)[:50] or "video"
-            file_extension = os.path.splitext(safe_name)[1] or ".mp4"
-            final_filename = f"{filename_base}_{timestamp}{file_extension}"
-            
-            # Путь относительно MEDIA_ROOT
-            media_path = os.path.join("videos", timezone.now().strftime("%Y/%m/%d"), final_filename)
-            full_media_path = os.path.join(settings.MEDIA_ROOT, media_path)
-            
-            # Создаём директорию если нужно
-            os.makedirs(os.path.dirname(full_media_path), exist_ok=True)
-            
-            # КРИТИЧНО: Потоковое копирование файла (не загружаем весь файл в RAM)
-            # Используем буфер 8MB для баланса между скоростью и использованием памяти
-            CHUNK_SIZE = 8 * 1024 * 1024  # 8MB буфер
-            with open(final_video_path, "rb") as src:
-                with open(full_media_path, "wb") as dst:
-                    while True:
-                        chunk = src.read(CHUNK_SIZE)
-                        if not chunk:
-                            break
-                        dst.write(chunk)
-
-            # Обновляем урок (video_url подставится в model.save() из БД)
-            lesson.video_file.name = media_path
-            lesson.video_duration = video_duration
-            lesson.youtube_status = "ready"
-            lesson.youtube_error = ""
-            lesson.save(update_fields=["video_file", "video_duration", "youtube_status", "youtube_error"])
-
+            thread = threading.Thread(
+                target=_process_video_upload_task,
+                args=(lesson.id, tmp_dir, tmp_path, safe_name, title, compression_enabled, max_size_gb),
+                daemon=True,
+            )
+            thread.start()
             return Response(TeacherLessonSerializer(lesson, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
         except Exception as e:
-            import traceback
-            error_trace = traceback.format_exc()
+            logger.exception("Ошибка при приёме видео")
             lesson.youtube_status = "error"
             lesson.youtube_error = str(e)
             lesson.save(update_fields=["youtube_status", "youtube_error"])
+            shutil.rmtree(tmp_dir, ignore_errors=True)
             return Response(
                 {"detail": "Ошибка загрузки видео.", "error": str(e), "lesson_id": lesson.id},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        finally:
-            shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 # =========================

@@ -1,3 +1,5 @@
+from django import forms
+from django.conf import settings
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.db.models import Count, Q
@@ -180,8 +182,35 @@ def unarchive_lessons(modeladmin, request, queryset):
 # =========================
 # LESSON
 # =========================
+def get_admin_video_max_mb():
+    return getattr(settings, "ADMIN_VIDEO_MAX_MB", 200)
+
+
+class LessonAdminForm(forms.ModelForm):
+    """Ограничение размера видео в админке, чтобы не блокировать сайт надолго."""
+
+    class Meta:
+        model = Lesson
+        fields = "__all__"
+
+    def clean_video_file(self):
+        value = self.cleaned_data.get("video_file")
+        if not value:
+            return value
+        max_mb = get_admin_video_max_mb()
+        max_bytes = max_mb * 1024 * 1024
+        if value.size > max_bytes:
+            raise forms.ValidationError(
+                f"Файл слишком большой ({value.size / (1024*1024):.0f} МБ). "
+                f"В админке разрешены файлы до {max_mb} МБ. Для больших файлов используйте API: "
+                "POST /api/teacher/lessons/create-with-upload/"
+            )
+        return value
+
+
 @admin.register(Lesson)
 class LessonAdmin(admin.ModelAdmin):
+    form = LessonAdminForm
     list_display = (
         "id",
         "order",
@@ -204,7 +233,6 @@ class LessonAdmin(admin.ModelAdmin):
         "archived_by",
         "youtube_video_id",
         "youtube_error",
-        "video_file",
         "video_file_preview",
         "video_file_info",
         "admin_video_upload_warning",
@@ -225,7 +253,11 @@ class LessonAdmin(admin.ModelAdmin):
                 "youtube_status",
                 "youtube_error"
             ),
-            "description": "Загрузка файла через админку отключена, чтобы не блокировать сайт. Используйте API: POST /api/teacher/lessons/create-with-upload/ или укажите ссылку (video_url)."
+            "description": (
+                f"Можно загружать видео до {get_admin_video_max_mb()} МБ. "
+                "Для больших файлов — API: POST /api/teacher/lessons/create-with-upload/. "
+                "Чтобы сайт не зависал при загрузке, запускайте сервер с несколькими воркерами (gunicorn -w 4)."
+            ),
         }),
         ("Домашнее задание", {
             "fields": ("homework_title", "homework_description", "homework_link", "homework_file")
@@ -247,13 +279,14 @@ class LessonAdmin(admin.ModelAdmin):
 
     @admin.display(description="")
     def admin_video_upload_warning(self, obj):
+        max_mb = get_admin_video_max_mb()
         return mark_safe(
-            '<div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; '
+            '<div style="background: #e7f3ff; border: 1px solid #0d6efd; border-radius: 6px; '
             'padding: 12px; margin-bottom: 12px;">'
-            '<strong>⚠️ Загрузка видео через админку отключена</strong>, чтобы сайт не зависал при больших файлах. '
-            'Чтобы добавить или заменить видео файл, используйте API: '
-            '<code>POST /api/teacher/lessons/create-with-upload/</code> (см. DOCS.md). '
-            'Здесь можно только указать ссылку на видео в поле «Ссылка на видео» (video_url).'
+            f'<strong>Видео в админке</strong>: до {max_mb} МБ. '
+            'Для больших файлов используйте API. '
+            'Чтобы сайт не зависал при загрузке, запускайте приложение с несколькими воркерами: '
+            '<code>gunicorn -w 4</code>.'
             '</div>'
         )
 
