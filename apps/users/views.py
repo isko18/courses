@@ -151,13 +151,32 @@ class CourseListCreateView(generics.ListCreateAPIView):
 
         category_id = self.request.query_params.get("category_id")
         instructor_id = self.request.query_params.get("instructor_id")
+        user = getattr(self.request, "user", None)
+        is_teacher = user and getattr(user, "role", None) == "teacher"
+
+        # Учитель без instructor_id — показываем только его курсы
+        if is_teacher and instructor_id is None:
+            qs = qs.filter(instructor=user)
+        elif instructor_id:
+            qs = qs.filter(instructor_id=instructor_id)
 
         if category_id:
             qs = qs.filter(category_id=category_id)
-        if instructor_id:
-            qs = qs.filter(instructor_id=instructor_id)
 
         return qs.order_by("id")
+
+    def list(self, request, *args, **kwargs):
+        """Для учителя при запросе своих курсов — без пагинации, чтобы видеть все."""
+        queryset = self.filter_queryset(self.get_queryset())
+        user = getattr(request, "user", None)
+        is_teacher = user and getattr(user, "role", None) == "teacher"
+        instructor_id = request.query_params.get("instructor_id")
+        is_teacher_own = is_teacher and (instructor_id is None or str(instructor_id) == str(user.id))
+
+        if is_teacher_own:
+            serializer = self.get_serializer(queryset, many=True)
+            return Response(serializer.data)
+        return super().list(request, *args, **kwargs)
 
     def perform_create(self, serializer):
         serializer.save(instructor=self.request.user)
