@@ -3,6 +3,7 @@ from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.db.models import Count, Q
 from django.utils import timezone
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from django.urls import reverse
 
 from .models import (
@@ -202,10 +203,11 @@ class LessonAdmin(admin.ModelAdmin):
         "archived_at",
         "archived_by",
         "youtube_video_id",
-        "video_url",
         "youtube_error",
+        "video_file",
         "video_file_preview",
         "video_file_info",
+        "admin_video_upload_warning",
     )
 
     fieldsets = (
@@ -214,6 +216,7 @@ class LessonAdmin(admin.ModelAdmin):
         }),
         ("Видео", {
             "fields": (
+                "admin_video_upload_warning",
                 "video_file",
                 "video_file_preview",
                 "video_file_info",
@@ -221,7 +224,8 @@ class LessonAdmin(admin.ModelAdmin):
                 "youtube_video_id",
                 "youtube_status",
                 "youtube_error"
-            )
+            ),
+            "description": "Загрузка файла через админку отключена, чтобы не блокировать сайт. Используйте API: POST /api/teacher/lessons/create-with-upload/ или укажите ссылку (video_url)."
         }),
         ("Домашнее задание", {
             "fields": ("homework_title", "homework_description", "homework_link", "homework_file")
@@ -240,6 +244,18 @@ class LessonAdmin(admin.ModelAdmin):
         if getattr(request.user, "role", "") == "teacher" and not request.user.is_superuser:
             return qs.filter(course__instructor=request.user)
         return qs
+
+    @admin.display(description="")
+    def admin_video_upload_warning(self, obj):
+        return mark_safe(
+            '<div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 6px; '
+            'padding: 12px; margin-bottom: 12px;">'
+            '<strong>⚠️ Загрузка видео через админку отключена</strong>, чтобы сайт не зависал при больших файлах. '
+            'Чтобы добавить или заменить видео файл, используйте API: '
+            '<code>POST /api/teacher/lessons/create-with-upload/</code> (см. DOCS.md). '
+            'Здесь можно только указать ссылку на видео в поле «Ссылка на видео» (video_url).'
+            '</div>'
+        )
 
     @admin.display(description="Видео файл", ordering="video_file")
     def video_file_link(self, obj):
